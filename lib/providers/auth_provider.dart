@@ -1,15 +1,16 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart';
+import 'package:flutter/widgets.dart';
 
 import '../config/env_config.dart';
 import '../models/user_model.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../services/socket_service.dart';
 import '../utils/cookie_helper.dart';
 
-class AuthProvider extends ChangeNotifier {
+class AuthProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _isAuthenticated = false;
   String? _userToken;
   UserModel? _user;
@@ -25,7 +26,45 @@ class AuthProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
 
   AuthProvider() {
+    WidgetsBinding.instance.addObserver(this);
     checkAuth();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint(
+        'App resumed: Re-verifying user profile & socket listener status...',
+      );
+      if (_isAuthenticated && _userToken != null) {
+        fetchUserProfile();
+        if (_user != null && _user!.id.isNotEmpty) {
+          SocketService.instance.ensureConnected(_user!.id, () async {
+            debugPrint(
+              'Socket event user-deleted received on app resume. Executing logout...',
+            );
+            await logout();
+          });
+        }
+      }
+    }
+  }
+
+  void _initSocketListener() {
+    if (_user != null && _user!.id.isNotEmpty) {
+      SocketService.instance.initUserDeletedListener(_user!.id, () async {
+        debugPrint(
+          'Socket event user-deleted received for user ${_user!.id}. Calling logout API...',
+        );
+        await logout();
+      });
+    }
   }
 
   /// Centralized check on application startup or manual re-check
@@ -40,6 +79,7 @@ class AuthProvider extends ChangeNotifier {
         try {
           final Map<String, dynamic> userData = jsonDecode(userCookie);
           _user = UserModel.fromJson(userData);
+          _initSocketListener();
         } catch (e) {
           debugPrint('Error restoring user data from cookie: $e');
         }
@@ -49,6 +89,7 @@ class AuthProvider extends ChangeNotifier {
       _userToken = null;
       _isAuthenticated = false;
       _user = null;
+      SocketService.instance.stopListening();
     }
     notifyListeners();
   }
@@ -121,6 +162,8 @@ class AuthProvider extends ChangeNotifier {
         EnvConfig.userCookieName,
         jsonEncode(_user!.toJson()),
       );
+
+      _initSocketListener();
 
       _isLoading = false;
       notifyListeners();
@@ -204,6 +247,8 @@ class AuthProvider extends ChangeNotifier {
         jsonEncode(_user!.toJson()),
       );
 
+      _initSocketListener();
+
       _isLoading = false;
       notifyListeners();
 
@@ -231,6 +276,8 @@ class AuthProvider extends ChangeNotifier {
 
   /// Logout method to call user logout API with token in cookie & authorization header, then clear state
   Future<void> logout({VoidCallback? onLogout}) async {
+    SocketService.instance.stopListening();
+
     final token =
         _userToken ?? CookieHelper.getCookie(EnvConfig.authCookieName);
 
@@ -383,11 +430,21 @@ class AuthProvider extends ChangeNotifier {
           EnvConfig.userCookieName,
           jsonEncode(_user!.toJson()),
         );
+        _initSocketListener();
         notifyListeners();
         return _user;
       }
     } catch (e) {
       debugPrint('Error fetching user profile in AuthProvider: $e');
+      if (e.toString().contains('USER_DELETED_OR_UNAUTHORIZED') ||
+          e.toString().contains('401') ||
+          e.toString().contains('404')) {
+        debugPrint(
+          'Detected deleted or unauthorized user account on fetchUserProfile. Calling logout API...',
+        );
+        await logout();
+        return null;
+      }
     }
     return _user;
   }

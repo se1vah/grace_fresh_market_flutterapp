@@ -11,6 +11,12 @@ class EnvConfig {
     defaultValue: 'https://grace-fresh-market-eta.vercel.app',
   );
 
+  /// Socket Host Server URL
+  static const String socketHost = String.fromEnvironment(
+    'SOCKET_HOST',
+    defaultValue: 'https://grace-fresh-market-socket.onrender.com',
+  );
+
   /// Shop API Endpoint Path
   static const String shopApiEndpoint = String.fromEnvironment(
     'SHOP_API_ENDPOINT',

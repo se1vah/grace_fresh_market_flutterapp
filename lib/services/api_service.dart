@@ -1081,35 +1081,52 @@ class ApiService {
           .get(primaryUri, headers: headers)
           .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
 
+      final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
+        if (body is Map<String, dynamic>) {
+          if (body['success'] == false || body['status'] == false) {
+            final msg = (body['message'] ?? body['error'] ?? '').toString().toLowerCase();
+            if (msg.contains('not found') || msg.contains('deleted') || msg.contains('unauthorized')) {
+              throw Exception('USER_DELETED_OR_UNAUTHORIZED');
+            }
+          }
           Map<String, dynamic> resultMap = {};
-          if (decoded.containsKey('data') &&
-              decoded['data'] is Map<String, dynamic>) {
-            resultMap = Map<String, dynamic>.from(decoded['data'] as Map);
-          } else if (decoded.containsKey('user') &&
-              decoded['user'] is Map<String, dynamic>) {
-            resultMap = Map<String, dynamic>.from(decoded['user'] as Map);
-          } else if (decoded.containsKey('profile') &&
-              decoded['profile'] is Map<String, dynamic>) {
-            resultMap = Map<String, dynamic>.from(decoded['profile'] as Map);
+          if (body.containsKey('data') &&
+              body['data'] is Map<String, dynamic>) {
+            resultMap = Map<String, dynamic>.from(body['data'] as Map);
+          } else if (body.containsKey('user') &&
+              body['user'] is Map<String, dynamic>) {
+            resultMap = Map<String, dynamic>.from(body['user'] as Map);
+          } else if (body.containsKey('profile') &&
+              body['profile'] is Map<String, dynamic>) {
+            resultMap = Map<String, dynamic>.from(body['profile'] as Map);
           } else {
-            resultMap = Map<String, dynamic>.from(decoded);
+            resultMap = Map<String, dynamic>.from(body);
           }
 
           if (!resultMap.containsKey('profileImage') &&
-              decoded.containsKey('profileImage')) {
-            resultMap['profileImage'] = decoded['profileImage'];
+              body.containsKey('profileImage')) {
+            resultMap['profileImage'] = body['profileImage'];
           }
           if (!resultMap.containsKey('profile_image') &&
-              decoded.containsKey('profile_image')) {
-            resultMap['profile_image'] = decoded['profile_image'];
+              body.containsKey('profile_image')) {
+            resultMap['profile_image'] = body['profile_image'];
           }
           return resultMap;
         }
+      } else if (response.statusCode == 401 ||
+          response.statusCode == 403 ||
+          response.statusCode == 404) {
+        debugPrint(
+          'User profile API returned ${response.statusCode} - Account deleted or unauthorized.',
+        );
+        throw Exception('USER_DELETED_OR_UNAUTHORIZED');
       }
     } catch (e) {
+      if (e.toString().contains('USER_DELETED_OR_UNAUTHORIZED')) {
+        rethrow;
+      }
       debugPrint('User profile GET API error ($primaryUri): $e');
     }
 
