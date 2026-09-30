@@ -28,22 +28,22 @@ class AppTheme {
       ),
       textTheme: GoogleFonts.outfitTextTheme().copyWith(
         titleLarge: GoogleFonts.outfit(
-          fontSize: 24,
+          fontSize: 22,
           fontWeight: FontWeight.bold,
           color: darkGreen,
         ),
         titleMedium: GoogleFonts.outfit(
-          fontSize: 18,
+          fontSize: 16,
           fontWeight: FontWeight.w600,
           color: textDark,
         ),
         bodyLarge: GoogleFonts.outfit(
-          fontSize: 16,
+          fontSize: 15,
           fontWeight: FontWeight.normal,
           color: textDark,
         ),
         bodyMedium: GoogleFonts.outfit(
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: FontWeight.normal,
           color: textSecondary,
         ),
@@ -55,7 +55,7 @@ class AppTheme {
         scrolledUnderElevation: 0,
         iconTheme: const IconThemeData(color: darkGreen),
         titleTextStyle: GoogleFonts.outfit(
-          fontSize: 20,
+          fontSize: 18,
           fontWeight: FontWeight.bold,
           color: darkGreen,
         ),

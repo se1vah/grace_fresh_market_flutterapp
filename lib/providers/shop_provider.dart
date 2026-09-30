@@ -59,7 +59,8 @@ class ShopProvider with ChangeNotifier {
         ...fetched,
       ];
     } catch (e) {
-      _error = 'Failed to load categories';
+      final msg = e.toString().replaceAll('Exception: ', '');
+      _error = msg.isNotEmpty ? msg : 'Failed to load categories';
     } finally {
       _isLoadingCategories = false;
       notifyListeners();
@@ -108,22 +109,9 @@ class ShopProvider with ChangeNotifier {
         _subCategoryItems = items;
       }
     } catch (e) {
-      // Fallback to cached items matching category if network query fails
-      if (_allSubCategoryItemsCache.isNotEmpty &&
-          _selectedCategoryId != 0 &&
-          _selectedCategoryId.toString() != 'all') {
-        final cachedMatches = _allSubCategoryItemsCache.where((item) {
-          return item.categoryId != null &&
-              item.categoryId.toString() == _selectedCategoryId.toString();
-        }).toList();
-        if (cachedMatches.isNotEmpty) {
-          _subCategoryItems = cachedMatches;
-        } else {
-          _error = 'Failed to load items';
-        }
-      } else {
-        _error = 'Failed to load items';
-      }
+      _subCategoryItems = [];
+      final msg = e.toString().replaceAll('Exception: ', '');
+      _error = msg.isNotEmpty ? msg : 'Failed to load items';
     } finally {
       _isLoadingItems = false;
       notifyListeners();

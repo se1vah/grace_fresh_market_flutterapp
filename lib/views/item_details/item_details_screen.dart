@@ -47,13 +47,20 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
   void _initOptions() {
     _options = _generateOptions();
     if (_options.isNotEmpty) {
-      if (widget.item.isGramType && _options.contains('1kg')) {
-        _selectedOption = '1kg';
+      if (widget.item.isGramType && (_options.contains('1 KG') || _options.contains('1KG') || _options.contains('1kg'))) {
+        _selectedOption = _options.contains('1 KG') ? '1 KG' : (_options.contains('1KG') ? '1KG' : '1kg');
       } else {
         _selectedOption = _options.first;
       }
     } else {
-      _selectedOption = widget.item.isQuantityType ? '1 Qty' : '1kg';
+      if (widget.item.isQuantityType) {
+        _selectedOption = '1 Qty';
+      } else if (widget.item.isGramType) {
+        _selectedOption = '1 KG';
+      } else {
+        final unit = widget.item.displayUnit;
+        _selectedOption = unit.isNotEmpty ? '1 $unit' : '1';
+      }
     }
   }
 
@@ -65,25 +72,20 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
       for (int i = 1; i <= maxStock; i++) {
         list.add('$i Qty');
       }
-    } else {
-      final int totalQuarters = maxStock * 4;
-      for (int q = 1; q <= totalQuarters; q++) {
-        final double kg = q * 0.25;
-        if (q == 1) {
-          list.add('250g');
-        } else if (q == 2) {
-          list.add('500g');
-        } else if (q == 3) {
-          list.add('750g');
+    } else if (widget.item.isGramType) {
+      if (maxStock >= 0.25) list.add('250 G');
+      if (maxStock >= 0.5) list.add('500 G');
+      for (double kg = 1.0; kg <= maxStock + 0.0001; kg += 0.5) {
+        if (kg % 1 == 0) {
+          list.add('${kg.toInt()} KG');
         } else {
-          if (kg % 1 == 0) {
-            list.add('${kg.toInt()}kg');
-          } else if ((kg * 10) % 1 == 0) {
-            list.add('${kg.toStringAsFixed(1)}kg');
-          } else {
-            list.add('${kg.toStringAsFixed(2)}kg');
-          }
+          list.add('${kg.toStringAsFixed(1)} KG');
         }
+      }
+    } else {
+      final unit = widget.item.displayUnit;
+      for (int i = 1; i <= maxStock; i++) {
+        list.add(unit.isNotEmpty ? '$i $unit' : '$i');
       }
     }
     return list;
@@ -123,6 +125,10 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
   }
 
   Widget _buildModernSelectorSection() {
+    if (widget.item.isOutOfStock) {
+      return const SizedBox.shrink();
+    }
+
     final isQty = widget.item.isQuantityType;
     final double multiplier = _getMultiplier(_selectedOption);
     final double finalTotalPrice = widget.item.unitFinalPrice * multiplier;
@@ -573,6 +579,36 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
                           ),
                         ),
                       ),
+                    if (widget.item.isOutOfStock)
+                      Positioned(
+                        top: 14,
+                        left: 14,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD32F2F),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.red.withAlpha(100),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            'Out of Stock',
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -643,7 +679,7 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
               Text(
                 widget.item.subcategoryName,
                 style: GoogleFonts.outfit(
-                  fontSize: 28,
+                  fontSize: 22,
                   fontWeight: FontWeight.bold,
                   color: AppTheme.darkGreen,
                   height: 1.2,
@@ -658,13 +694,13 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
                   Text(
                     '₹${widget.item.unitFinalPrice.toStringAsFixed(2)}',
                     style: GoogleFonts.outfit(
-                      fontSize: 22,
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.darkGreen,
                     ),
                   ),
                   Text(
-                    widget.item.isQuantityType ? ' / Qty' : ' / kg',
+                    widget.item.priceUnitSuffix,
                     style: GoogleFonts.outfit(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -725,92 +761,36 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
 
               const SizedBox(height: 36),
 
-              // Cart Actions Section (Add to Cart if not in cart; Update Cart & Remove Cart buttons if in cart)
-              Consumer<CartProvider>(
-                builder: (context, cartProvider, child) {
-                  final bool isInCart = cartProvider.isItemInCart(
-                    widget.item.id,
-                  );
+              // Cart Actions Section (Hidden if out of stock, else Add to Cart / Cart actions)
+              if (!widget.item.isOutOfStock)
+                Consumer<CartProvider>(
+                  builder: (context, cartProvider, child) {
+                    final bool isInCart = cartProvider.isItemInCart(
+                      widget.item.id,
+                    );
 
-                  if (isInCart) {
-                    return Row(
-                      children: [
-                        // "In Cart" Button
-                        Expanded(
-                          child: SizedBox(
-                            height: 56,
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                ScaffoldMessenger.of(context)
-                                    .hideCurrentSnackBar();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'The item is already in the cart.',
-                                      style: GoogleFonts.outfit(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w500,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    backgroundColor: AppTheme.darkGreen,
-                                    duration: const Duration(seconds: 2),
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(
-                                Icons.check_circle_rounded,
-                                color: AppTheme.darkGreen,
-                                size: 22,
-                              ),
-                              label: Text(
-                                'In Cart',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.darkGreen,
-                                ),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFB5ED66),
-                                foregroundColor: AppTheme.darkGreen,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                elevation: 2,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Remove Cart Button
-                        Expanded(
-                          child: SizedBox(
-                            height: 56,
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                try {
-                                  await cartProvider.removeFromCart(
-                                    widget.item.id,
-                                  );
-                                  if (!context.mounted) return;
+                    if (isInCart) {
+                      return Row(
+                        children: [
+                          // "In Cart" Button
+                          Expanded(
+                            child: SizedBox(
+                              height: 56,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
                                   ScaffoldMessenger.of(context)
                                       .hideCurrentSnackBar();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
-                                        '${widget.item.subcategoryName} removed from cart!',
+                                        'The item is already in the cart.',
                                         style: GoogleFonts.outfit(
                                           fontSize: 15,
                                           fontWeight: FontWeight.w500,
                                           color: Colors.white,
                                         ),
                                       ),
-                                      backgroundColor: Colors.redAccent,
+                                      backgroundColor: AppTheme.darkGreen,
                                       duration: const Duration(seconds: 2),
                                       behavior: SnackBarBehavior.floating,
                                       shape: RoundedRectangleBorder(
@@ -818,83 +798,141 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
                                       ),
                                     ),
                                   );
-                                } catch (e) {
-                                  if (!context.mounted) return;
-                                  final errorMsg = e.toString().replaceAll(
-                                    'Exception: ',
-                                    '',
-                                  );
-                                  ScaffoldMessenger.of(context)
-                                      .hideCurrentSnackBar();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        errorMsg,
-                                        style: GoogleFonts.outfit(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w500,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      backgroundColor: Colors.redAccent,
-                                      duration: const Duration(seconds: 4),
-                                      behavior: SnackBarBehavior.floating,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
-                              icon: const Icon(
-                                Icons.delete_outline_rounded,
-                                size: 20,
-                              ),
-                              label: Text(
-                                'Remove Cart',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                                },
+                                icon: const Icon(
+                                  Icons.check_circle_rounded,
+                                  color: AppTheme.darkGreen,
+                                  size: 22,
                                 ),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.redAccent,
-                                side: const BorderSide(
-                                  color: Colors.redAccent,
-                                  width: 1.5,
+                                label: Text(
+                                  'In Cart',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.darkGreen,
+                                  ),
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFB5ED66),
+                                  foregroundColor: AppTheme.darkGreen,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  elevation: 2,
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    );
-                  }
+                          const SizedBox(width: 12),
+                          // Remove Cart Button
+                          Expanded(
+                            child: SizedBox(
+                              height: 56,
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  try {
+                                    await cartProvider.removeFromCart(
+                                      widget.item.id,
+                                    );
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context)
+                                        .hideCurrentSnackBar();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          '${widget.item.subcategoryName} removed from cart!',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        backgroundColor: Colors.redAccent,
+                                        duration: const Duration(seconds: 2),
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    if (!context.mounted) return;
+                                    final errorMsg = e.toString().replaceAll(
+                                      'Exception: ',
+                                      '',
+                                    );
+                                    ScaffoldMessenger.of(context)
+                                        .hideCurrentSnackBar();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          errorMsg,
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        backgroundColor: Colors.redAccent,
+                                        duration: const Duration(seconds: 4),
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 20,
+                                ),
+                                label: Text(
+                                  'Remove Cart',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.redAccent,
+                                  side: const BorderSide(
+                                    color: Colors.redAccent,
+                                    width: 1.5,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
 
-                  return SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final authProvider =
-                            Provider.of<AuthProvider>(context, listen: false);
-                        if (!authProvider.isAuthenticated) {
-                          AuthDialogHelper.showLoginRequiredAlert(context);
-                          return;
-                        }
-
-                        try {
-                          await cartProvider.addToCart(
-                            widget.item,
-                            weight: _selectedOption,
-                            quantity: widget.item.isQuantityType
-                                ? _getMultiplier(_selectedOption)
-                                : parseQuantityFromWeight(_selectedOption, 1),
+                    return SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          final authProvider = Provider.of<AuthProvider>(
+                            context,
+                            listen: false,
                           );
-                          if (!context.mounted) return;
+                          if (!authProvider.isAuthenticated) {
+                            AuthDialogHelper.showLoginRequiredAlert(context);
+                            return;
+                          }
+
+                          if (cartProvider.isItemProcessing(widget.item.id)) {
+                            return;
+                          }
+
                           ScaffoldMessenger.of(context).hideCurrentSnackBar();
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -914,53 +952,69 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
                               ),
                             ),
                           );
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          final errorMsg = e.toString().replaceAll(
-                            'Exception: ',
-                            '',
-                          );
-                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                errorMsg,
-                                style: GoogleFonts.outfit(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              backgroundColor: Colors.redAccent,
-                              duration: const Duration(seconds: 4),
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.shopping_basket_rounded, size: 22),
-                      label: Text(
-                        'Add to Cart',
-                        style: GoogleFonts.outfit(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+
+                          cartProvider
+                              .addToCart(
+                                widget.item,
+                                weight: _selectedOption,
+                                quantity: widget.item.isQuantityType
+                                    ? _getMultiplier(_selectedOption)
+                                    : parseQuantityFromWeight(
+                                        _selectedOption,
+                                        1,
+                                      ),
+                              )
+                              .catchError((e) {
+                                if (!context.mounted) return;
+                                final errorMsg = e.toString().replaceAll(
+                                  'Exception: ',
+                                  '',
+                                );
+                                ScaffoldMessenger.of(context)
+                                    .hideCurrentSnackBar();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      errorMsg,
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    backgroundColor: Colors.redAccent,
+                                    duration: const Duration(seconds: 4),
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                );
+                              });
+                        },
+                        icon: const Icon(
+                          Icons.shopping_basket_rounded,
+                          size: 22,
+                        ),
+                        label: Text(
+                          'Add to Cart',
+                          style: GoogleFonts.outfit(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.darkGreen,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 2,
                         ),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.darkGreen,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        elevation: 2,
-                      ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
 
               const SizedBox(height: 20),
             ],

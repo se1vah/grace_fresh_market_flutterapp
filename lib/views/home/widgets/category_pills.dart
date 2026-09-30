@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+
 import '../../../models/category.dart';
 import '../../../providers/shop_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../widgets/skeleton_loader.dart';
 
 class CategoryPills extends StatelessWidget {
   const CategoryPills({super.key});
@@ -80,19 +82,7 @@ class CategoryPills extends StatelessWidget {
     return Consumer<ShopProvider>(
       builder: (context, shopProvider, child) {
         if (shopProvider.isLoadingCategories) {
-          return const SizedBox(
-            height: 48,
-            child: Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppTheme.darkGreen,
-                ),
-              ),
-            ),
-          );
+          return const CategoryPillsSkeleton();
         }
 
         final categories = shopProvider.categories;
@@ -107,7 +97,8 @@ class CategoryPills extends StatelessWidget {
             itemBuilder: (context, index) {
               final cat = categories[index];
               final dynamic categoryId = cat.id;
-              final bool isSelected = shopProvider.selectedCategoryId == categoryId;
+              final bool isSelected =
+                  shopProvider.selectedCategoryId == categoryId;
 
               return InkWell(
                 onTap: () {
@@ -116,9 +107,14 @@ class CategoryPills extends StatelessWidget {
                 borderRadius: BorderRadius.circular(24),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: isSelected ? AppTheme.darkGreen : const Color(0xFFF2F4F1),
+                    color: isSelected
+                        ? AppTheme.darkGreen
+                        : const Color(0xFFF2F4F1),
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: isSelected
                         ? [
@@ -126,7 +122,7 @@ class CategoryPills extends StatelessWidget {
                               color: AppTheme.darkGreen.withAlpha(51),
                               blurRadius: 6,
                               offset: const Offset(0, 3),
-                            )
+                            ),
                           ]
                         : [],
                   ),
@@ -139,7 +135,9 @@ class CategoryPills extends StatelessWidget {
                         cat.categoryName,
                         style: GoogleFonts.outfit(
                           color: isSelected ? Colors.white : AppTheme.textDark,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
                           fontSize: 14,
                         ),
                       ),
@@ -154,4 +152,3 @@ class CategoryPills extends StatelessWidget {
     );
   }
 }
-

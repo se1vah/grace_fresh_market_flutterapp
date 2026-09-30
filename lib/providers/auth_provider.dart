@@ -1,9 +1,12 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 
 import '../config/env_config.dart';
 import '../models/user_model.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import '../utils/cookie_helper.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -57,17 +60,22 @@ class AuthProvider extends ChangeNotifier {
     required String email,
     required String password,
     required String confirmPassword,
+    String? fcmToken,
   }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      final String? effectiveFcmToken =
+          fcmToken ?? await NotificationService.getFcmToken();
+
       final response = await _apiService.createUser(
         fullName: fullName,
         phoneNumber: phoneNumber,
         email: email,
         password: password,
+        fcmToken: effectiveFcmToken,
       );
       // Read token from API response
       String? token;
@@ -99,6 +107,7 @@ class AuthProvider extends ChangeNotifier {
         'full_name': fullName,
         'email': email,
         'phone_number': phoneNumber,
+        'fcm_token': ?effectiveFcmToken,
       };
       if (response['user'] is Map<String, dynamic>) {
         userData = response['user'];
@@ -130,15 +139,20 @@ class AuthProvider extends ChangeNotifier {
   Future<Map<String, dynamic>> login({
     required String emailOrPhone,
     required String password,
+    String? fcmToken,
   }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      final String? effectiveFcmToken =
+          fcmToken ?? await NotificationService.getFcmToken();
+
       final response = await _apiService.loginUser(
         emailOrPhone: emailOrPhone,
         password: password,
+        fcmToken: effectiveFcmToken,
       );
 
       // Read token from API response
@@ -215,8 +229,19 @@ class AuthProvider extends ChangeNotifier {
     _logoutListeners.remove(listener);
   }
 
-  /// Logout method to clear cookie and auth state
-  void logout({VoidCallback? onLogout}) {
+  /// Logout method to call user logout API with token in cookie & authorization header, then clear state
+  Future<void> logout({VoidCallback? onLogout}) async {
+    final token =
+        _userToken ?? CookieHelper.getCookie(EnvConfig.authCookieName);
+
+    if (token != null && token.isNotEmpty) {
+      try {
+        await _apiService.logoutUser(token);
+      } catch (e) {
+        debugPrint('Error executing logout API call: $e');
+      }
+    }
+
     CookieHelper.removeCookie(EnvConfig.authCookieName);
     CookieHelper.removeCookie(EnvConfig.userCookieName);
     _userToken = null;
@@ -272,20 +297,43 @@ class AuthProvider extends ChangeNotifier {
 
       if (response['success'] == false) {
         _isLoading = false;
-        _errorMessage = response['message']?.toString() ?? 'Failed to update profile.';
+        _errorMessage =
+            response['message']?.toString() ?? 'Failed to update profile.';
         notifyListeners();
-        return {
-          'success': false,
-          'message': _errorMessage,
-        };
+        return {'success': false, 'message': _errorMessage};
       }
 
-      String? updatedProfileImage = profileImage ?? _user?.profileImage;
-      if (response['user'] is Map && response['user']['profile_image'] != null) {
-        updatedProfileImage = response['user']['profile_image'].toString();
-      } else if (response['data'] is Map && response['data']['profileImage'] != null) {
-        updatedProfileImage = response['data']['profileImage'].toString();
+      Map<String, dynamic>? userMap;
+      if (response['user'] is Map<String, dynamic>) {
+        userMap = response['user'] as Map<String, dynamic>;
+      } else if (response['data'] is Map<String, dynamic>) {
+        final dataMap = response['data'] as Map<String, dynamic>;
+        if (dataMap['user'] is Map<String, dynamic>) {
+          userMap = dataMap['user'] as Map<String, dynamic>;
+        } else {
+          userMap = dataMap;
+        }
+      } else if (response.containsKey('profileImage') ||
+          response.containsKey('profile_image') ||
+          response.containsKey('avatar') ||
+          response.containsKey('image')) {
+        userMap = response;
       }
+
+      String? updatedProfileImage;
+      if (userMap != null) {
+        final rawImg = userMap['profileImage'] ??
+            userMap['profile_image'] ??
+            userMap['avatar'] ??
+            userMap['image'];
+        if (rawImg != null && rawImg.toString().trim().isNotEmpty) {
+          updatedProfileImage = EnvConfig.formatImageUrl(rawImg.toString());
+        }
+      }
+
+      updatedProfileImage ??= (profileImage != null && profileImage.isNotEmpty
+          ? EnvConfig.formatImageUrl(profileImage)
+          : _user?.profileImage);
 
       final userId = _user?.id ?? '1';
       final updatedUser = UserModel(
@@ -302,14 +350,18 @@ class AuthProvider extends ChangeNotifier {
         jsonEncode(_user!.toJson()),
       );
 
+      try {
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+      } catch (_) {}
+
       _isLoading = false;
       notifyListeners();
-
-
 
       return {
         'success': true,
         'message': response['message'] ?? 'Profile updated successfully!',
+        'user': updatedUser,
       };
     } catch (e) {
       _isLoading = false;
@@ -339,5 +391,44 @@ class AuthProvider extends ChangeNotifier {
     }
     return _user;
   }
-}
 
+  /// Delete user account API: DELETE /api/user/delete/:userId
+  Future<Map<String, dynamic>> deleteAccount() async {
+    String? userId = _user?.id;
+    if (userId == null || userId.isEmpty) {
+      final userCookie = CookieHelper.getCookie(EnvConfig.userCookieName);
+      if (userCookie != null && userCookie.isNotEmpty) {
+        try {
+          final Map<String, dynamic> userData = jsonDecode(userCookie);
+          userId = userData['id']?.toString() ?? userData['_id']?.toString();
+        } catch (_) {}
+      }
+    }
+
+    if (userId == null || userId.isEmpty) {
+      return {'success': false, 'message': 'User ID not found.'};
+    }
+
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final result = await _apiService.deleteUserAccount(userId);
+
+      // Sign out user and clear state
+      await logout();
+
+      _isLoading = false;
+      notifyListeners();
+
+      return result;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+
+      return {'success': false, 'message': _errorMessage};
+    }
+  }
+}

@@ -7,8 +7,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../auth/login_screen.dart';
 import '../main_navigation_screen.dart';
-import '../notifications/notifications_screen.dart';
 import '../profile/delivery_address_screen.dart';
+import '../profile/my_orders_screen.dart';
 import 'about_us_dialog.dart';
 import 'help_support_dialog.dart';
 
@@ -43,7 +43,9 @@ class GraceDrawer extends StatelessWidget {
                   children: [
                     _buildMenuItem(
                       context,
-                      icon: isHomeActive ? Icons.home_rounded : Icons.home_outlined,
+                      icon: isHomeActive
+                          ? Icons.home_rounded
+                          : Icons.home_outlined,
                       title: 'Home',
                       isActive: isHomeActive,
                       onTap: () {
@@ -59,7 +61,13 @@ class GraceDrawer extends StatelessWidget {
                       isActive: currentRoute == 'orders',
                       onTap: () {
                         Navigator.of(context).pop();
-                        MainNavigationScreen.navigateToTab(context, 3);
+                        if (currentRoute != 'orders') {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const MyOrdersScreen(),
+                            ),
+                          );
+                        }
                       },
                     ),
                     const SizedBox(height: 8),
@@ -73,7 +81,8 @@ class GraceDrawer extends StatelessWidget {
                         if (currentRoute != 'addresses') {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) => const DeliveryAddressScreen(),
+                              builder: (context) =>
+                                  const DeliveryAddressScreen(),
                             ),
                           );
                         }
@@ -85,19 +94,11 @@ class GraceDrawer extends StatelessWidget {
                       icon: Icons.notifications_none_outlined,
                       title: 'Notifications',
                       isActive: currentRoute == 'notifications',
-                      badgeCount: 3,
+                      badgeCount: 0,
                       onTap: () {
                         Navigator.of(context).pop();
                         if (currentRoute != 'notifications') {
-                          if (MainNavigationScreen.isInsideMainNavigation(context)) {
-                            MainNavigationScreen.navigateToTab(context, 2);
-                          } else {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const NotificationsScreen(),
-                              ),
-                            );
-                          }
+                          MainNavigationScreen.navigateToTab(context, 2);
                         }
                       },
                     ),
@@ -178,13 +179,15 @@ class GraceDrawer extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
-                          isLoggedIn ? Icons.output_rounded : Icons.login_rounded,
+                          isLoggedIn
+                              ? Icons.output_rounded
+                              : Icons.login_rounded,
                           color: const Color(0xFF4A3E3D),
                           size: 20,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          isLoggedIn ? 'Sign Out' : 'Sign In',
+                          isLoggedIn ? 'Log Out' : 'Sign In',
                           style: GoogleFonts.outfit(
                             color: const Color(0xFF4A3E3D),
                             fontSize: 15,
@@ -211,8 +214,12 @@ class GraceDrawer extends StatelessWidget {
     required VoidCallback onTap,
     int? badgeCount,
   }) {
-    const activeBgColor = Color(0xFFC5F368); // Bright lime green pill matching screenshot
-    const activeTextColor = Color(0xFF384318); // Dark olive green text matching screenshot
+    const activeBgColor = Color(
+      0xFFC5F368,
+    ); // Bright lime green pill matching screenshot
+    const activeTextColor = Color(
+      0xFF384318,
+    ); // Dark olive green text matching screenshot
     const inactiveTextColor = Color(0xFF374151); // Dark charcoal text
     const inactiveIconColor = Color(0xFF4B5563);
 
@@ -274,4 +281,3 @@ class GraceDrawer extends StatelessWidget {
     );
   }
 }
-

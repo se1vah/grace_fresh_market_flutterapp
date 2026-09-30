@@ -21,7 +21,6 @@ class CartProvider with ChangeNotifier {
 
   CartProvider() {
     fetchDeliveryFee();
-    fetchCheckoutDetails();
   }
 
   List<CartItem> get items => List.unmodifiable(_items);
@@ -61,7 +60,6 @@ class CartProvider with ChangeNotifier {
       _items.clear();
       _items.addAll(fetchedItems);
       await fetchDeliveryFee();
-      await fetchCheckoutDetails();
     } catch (e) {
       debugPrint('Error fetching cart items from API: $e');
       _items.clear();
@@ -73,20 +71,66 @@ class CartProvider with ChangeNotifier {
   }
 
   Future<void> fetchCheckoutDetails() async {
+    final token = CookieHelper.getCookie(EnvConfig.authCookieName);
+    if (token == null || token.isEmpty) {
+      _checkoutDetails = null;
+      _checkoutError = null;
+      _isLoadingCheckout = false;
+      notifyListeners();
+      return;
+    }
+
     _isLoadingCheckout = true;
     _checkoutError = null;
     notifyListeners();
 
     try {
-      final details = await _apiService.getCheckoutDetails();
-      _checkoutDetails = details;
+      final addresses = await _apiService.getUserAddresses();
+      final codMethod = PaymentMethodData(
+        id: 'cod',
+        paymentType: 'COD',
+        description:
+            "Pay when your fresh produce arrives at your door. We accept exact cash or card via our driver's terminal.",
+      );
+
+      if (addresses.isEmpty) {
+        _checkoutDetails = CheckoutDetails(
+          deliveryAddress: null,
+          paymentMethods: [codMethod],
+        );
+      } else {
+        final activeAddr = addresses.firstWhere(
+          (a) => a.isDefault,
+          orElse: () => addresses.first,
+        );
+        _checkoutDetails = CheckoutDetails(
+          deliveryAddress: DeliveryAddressData(
+            id: activeAddr.id,
+            fullName: '',
+            phoneNumber: '',
+            addressLine1: activeAddr.buildingName,
+            addressLine2: activeAddr.streetName,
+            city: activeAddr.city,
+            state: activeAddr.state,
+            postalCode: activeAddr.pincode,
+          ),
+          paymentMethods: [codMethod],
+        );
+      }
     } catch (e) {
       _checkoutError = e.toString().replaceAll('Exception: ', '');
-      debugPrint('Error fetching checkout details in CartProvider: $e');
+      debugPrint('Error fetching user addresses in CartProvider: $e');
     } finally {
       _isLoadingCheckout = false;
       notifyListeners();
     }
+  }
+
+  final Set<String> _processingItemIds = {};
+
+  bool isItemProcessing(dynamic itemId) {
+    if (itemId == null) return false;
+    return _processingItemIds.contains(itemId.toString());
   }
 
   bool isItemInCart(dynamic itemId) {
@@ -100,6 +144,14 @@ class CartProvider with ChangeNotifier {
     String weight = '1kg',
     num? quantity,
   }) async {
+    if (item.isOutOfStock) {
+      throw Exception('${item.subcategoryName} is currently out of stock.');
+    }
+
+    final itemIdStr = item.id.toString();
+    if (_processingItemIds.contains(itemIdStr)) return;
+    _processingItemIds.add(itemIdStr);
+
     final existingIndex = _items.indexWhere(
       (ci) => ci.item.id.toString() == item.id.toString(),
     );
@@ -108,8 +160,16 @@ class CartProvider with ChangeNotifier {
     num effectiveQty = quantity ?? parseQuantityFromWeight(weight, 1);
 
     dynamic existingCartId;
+    CartItem? previousItem;
+
     if (isAlreadyInCart) {
       existingCartId = _items[existingIndex].id;
+      previousItem = CartItem(
+        id: _items[existingIndex].id,
+        item: _items[existingIndex].item,
+        selectedWeight: _items[existingIndex].selectedWeight,
+        quantity: _items[existingIndex].quantity,
+      );
       _items[existingIndex].selectedWeight = weight;
       _items[existingIndex].quantity = effectiveQty;
     } else {
@@ -151,19 +211,56 @@ class CartProvider with ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error saving/updating item in cart API: $e');
+      // Revert local changes on error so item is not stored locally
+      if (isAlreadyInCart) {
+        final idx = _items.indexWhere(
+          (ci) => ci.item.id.toString() == item.id.toString(),
+        );
+        if (idx >= 0 && previousItem != null) {
+          _items[idx] = previousItem;
+        }
+      } else {
+        _items.removeWhere((ci) => ci.item.id.toString() == item.id.toString());
+      }
+      notifyListeners();
       rethrow;
+    } finally {
+      _processingItemIds.remove(itemIdStr);
     }
   }
 
   Future<void> removeFromCart(dynamic itemId) async {
-    _items.removeWhere((ci) => ci.item.id.toString() == itemId.toString());
+    final itemIdStr = itemId.toString();
+    if (_processingItemIds.contains(itemIdStr)) return;
+    _processingItemIds.add(itemIdStr);
+
+    final existingIndex = _items.indexWhere(
+      (ci) => ci.item.id.toString() == itemId.toString(),
+    );
+    if (existingIndex < 0) {
+      _processingItemIds.remove(itemIdStr);
+      return;
+    }
+
+    final removedItem = _items[existingIndex];
+    _items.removeAt(existingIndex);
     notifyListeners();
 
     try {
       await _apiService.removeFromCart(itemId);
     } catch (e) {
       debugPrint('Error removing item from cart API: $e');
+      if (!_items.any((ci) => ci.item.id.toString() == itemId.toString())) {
+        if (existingIndex <= _items.length) {
+          _items.insert(existingIndex, removedItem);
+        } else {
+          _items.add(removedItem);
+        }
+      }
+      notifyListeners();
       rethrow;
+    } finally {
+      _processingItemIds.remove(itemIdStr);
     }
   }
 
@@ -177,6 +274,12 @@ class CartProvider with ChangeNotifier {
         await _apiService.removeFromCart(itemToRemove.item.id);
       } catch (e) {
         debugPrint('Error removing item at index from cart API: $e');
+        if (index <= _items.length) {
+          _items.insert(index, itemToRemove);
+        } else {
+          _items.add(itemToRemove);
+        }
+        notifyListeners();
         rethrow;
       }
     }
@@ -188,8 +291,10 @@ class CartProvider with ChangeNotifier {
     );
     if (index >= 0) {
       final cartItem = _items[index];
-      cartItem.selectedWeight = newWeight;
+      final oldWeight = cartItem.selectedWeight;
+      final oldQty = cartItem.quantity;
 
+      cartItem.selectedWeight = newWeight;
       num effectiveQty = parseQuantityFromWeight(newWeight, cartItem.quantity);
       cartItem.quantity = effectiveQty;
       notifyListeners();
@@ -203,6 +308,9 @@ class CartProvider with ChangeNotifier {
         );
       } catch (e) {
         debugPrint('Error updating item weight in cart API: $e');
+        cartItem.selectedWeight = oldWeight;
+        cartItem.quantity = oldQty;
+        notifyListeners();
         rethrow;
       }
     }
@@ -217,6 +325,8 @@ class CartProvider with ChangeNotifier {
         await removeFromCart(itemId);
       } else {
         final cartItem = _items[index];
+        final oldQty = cartItem.quantity;
+
         cartItem.quantity = newQuantity;
         notifyListeners();
 
@@ -229,6 +339,8 @@ class CartProvider with ChangeNotifier {
           );
         } catch (e) {
           debugPrint('Error updating item quantity in cart API: $e');
+          cartItem.quantity = oldQty;
+          notifyListeners();
           rethrow;
         }
       }
@@ -254,5 +366,36 @@ class CartProvider with ChangeNotifier {
     _checkoutDetails = null;
     _checkoutError = null;
     notifyListeners();
+  }
+
+  Future<Map<String, dynamic>> placeOrder() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final fetchedItems = await _apiService.getCartItems();
+      if (fetchedItems.isEmpty) {
+        throw Exception('Your cart is empty.');
+      }
+
+      final cartIds = fetchedItems
+          .map((item) => item.id)
+          .where((id) => id != null)
+          .toList();
+
+      if (cartIds.isEmpty) {
+        throw Exception('No valid cart item IDs found.');
+      }
+
+      final response = await _apiService.placeOrder(cartIds);
+      clearCart();
+      return response;
+    } catch (e) {
+      debugPrint('Error placing order in CartProvider: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 }

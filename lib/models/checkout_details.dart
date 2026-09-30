@@ -22,9 +22,8 @@ class DeliveryAddressData {
   factory DeliveryAddressData.fromJson(Map<String, dynamic> json) {
     return DeliveryAddressData(
       id: json['id'] ?? json['_id'] ?? 0,
-      fullName:
-          (json['fullName'] ?? json['full_name'] ?? json['name'] ?? '')
-              .toString(),
+      fullName: (json['fullName'] ?? json['full_name'] ?? json['name'] ?? '')
+          .toString(),
       phoneNumber:
           (json['phoneNumber'] ?? json['phone_number'] ?? json['phone'] ?? '')
               .toString(),
@@ -82,8 +81,8 @@ class PaymentMethodData {
   factory PaymentMethodData.fromJson(Map<String, dynamic> json) {
     return PaymentMethodData(
       id: json['id'] ?? json['_id'] ?? 0,
-      paymentType:
-          (json['paymentType'] ?? json['payment_type'] ?? 'COD').toString(),
+      paymentType: (json['paymentType'] ?? json['payment_type'] ?? 'COD')
+          .toString(),
       description: (json['description'] ?? '').toString(),
     );
   }
@@ -125,11 +124,10 @@ class CheckoutDetails {
     List<PaymentMethodData> methods = [];
     if (dataMap.containsKey('paymentMethods') &&
         dataMap['paymentMethods'] is List) {
-      methods =
-          (dataMap['paymentMethods'] as List)
-              .whereType<Map<String, dynamic>>()
-              .map((m) => PaymentMethodData.fromJson(m))
-              .toList();
+      methods = (dataMap['paymentMethods'] as List)
+          .whereType<Map<String, dynamic>>()
+          .map((m) => PaymentMethodData.fromJson(m))
+          .toList();
     }
 
     return CheckoutDetails(deliveryAddress: addr, paymentMethods: methods);

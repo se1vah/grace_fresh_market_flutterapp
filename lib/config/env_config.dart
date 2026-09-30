@@ -8,7 +8,7 @@ class EnvConfig {
   /// Server Host IP / Domain Base URL
   static const String serverHost = String.fromEnvironment(
     'SERVER_HOST',
-    defaultValue: 'http://localhost:3000',
+    defaultValue: 'https://grace-fresh-market-eta.vercel.app',
   );
 
   /// Shop API Endpoint Path
@@ -26,7 +26,7 @@ class EnvConfig {
   /// Cart API Endpoint Path
   static const String cartApiEndpoint = String.fromEnvironment(
     'CART_API_ENDPOINT',
-    defaultValue: '/api/cart',
+    defaultValue: '/api/user/cart',
   );
 
   /// Full Base URL for Shop API
@@ -41,6 +41,10 @@ class EnvConfig {
   /// Full Base URL for User Profile API: http://localhost/api/user/profile
   static String get userProfileUrl => '$serverHost/api/user/profile';
 
+  /// Full Base URL for User Delete API: DELETE https://grace-fresh-market-eta.vercel.app/api/user/delete/:userId
+  static String userDeleteUrl(String userId) =>
+      '$serverHost/api/user/delete/$userId';
+
   /// Full Base URL for Cart Add API
   static String get cartAddUrl => '$serverHost$cartApiEndpoint/add';
 
@@ -54,9 +58,24 @@ class EnvConfig {
   /// Full Base URL for Cart Update API
   static String get cartUpdateUrl => '$serverHost$cartApiEndpoint';
 
-  /// Full Base URL for Cart Checkout Details API
-  static String get cartCheckoutDetailsUrl =>
-      '$serverHost$cartApiEndpoint/get-check-out-details';
+  /// Full Base URL for Order Create API
+  static String get orderCreateUrl => '$serverHost/api/user/orders/create';
+
+  /// Full Base URL for Order Get All API
+  static String get orderGetAllUrl => '$serverHost/api/users/orders/get-all';
+
+  /// Full Base URL for Order Get By ID API: GET https://grace-fresh-market-eta.vercel.app/api/users/orders/{orderId}
+  static String getOrderByIdUrl(dynamic orderId, {dynamic notificationId}) {
+    final baseUrl = '$serverHost/api/users/orders/$orderId';
+    if (notificationId != null &&
+        notificationId.toString().trim().isNotEmpty) {
+      return '$baseUrl?notificationId=${notificationId.toString().trim()}';
+    }
+    return baseUrl;
+  }
+
+  /// Full Base URL for User Notifications API: GET /api/user/notifications
+  static String get notificationsUrl => '$serverHost/api/user/notifications';
 
   /// Full Base URL for User Address Get All API
   static String get addressGetAllUrl => '$serverHost/api/user/address/get-all';
@@ -82,13 +101,13 @@ class EnvConfig {
   /// Default API Request Timeout (seconds)
   static const int apiTimeoutSeconds = int.fromEnvironment(
     'API_TIMEOUT',
-    defaultValue: 8,
+    defaultValue: 25,
   );
 
   /// Short API Request Timeout for quick fetches (seconds)
   static const int shortTimeoutSeconds = int.fromEnvironment(
     'SHORT_TIMEOUT',
-    defaultValue: 4,
+    defaultValue: 15,
   );
 
   /// Current Application Environment (development, staging, production)

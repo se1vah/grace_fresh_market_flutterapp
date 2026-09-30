@@ -1,6 +1,10 @@
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
 
+Future<void> initImpl() async {
+  // Web browser automatically persists document.cookie based on max-age
+}
+
 void setCookieImpl(String name, String value, {int maxAgeSeconds = 604800}) {
   final isSecure = html.window.location.protocol == 'https:';
   final secureFlag = isSecure ? '; Secure' : '';

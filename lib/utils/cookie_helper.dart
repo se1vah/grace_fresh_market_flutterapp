@@ -2,6 +2,11 @@ import 'cookie_helper_stub.dart'
     if (dart.library.html) 'cookie_helper_web.dart' as helper;
 
 class CookieHelper {
+  /// Initialize persistent storage on app launch.
+  static Future<void> init() async {
+    await helper.initImpl();
+  }
+
   /// Save a cookie with name and value.
   /// Defaults to 7 days max-age (604800 seconds).
   static void setCookie(String name, String value, {int maxAgeSeconds = 604800}) {

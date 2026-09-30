@@ -97,6 +97,7 @@ class _ItemCardState extends State<ItemCard> {
                               imageUrl: images[index],
                               itemName: item.subcategoryName,
                               fit: BoxFit.cover,
+                              isGray: item.isOutOfStock,
                             );
                           },
                         )
@@ -106,6 +107,7 @@ class _ItemCardState extends State<ItemCard> {
                             imageUrl: item.image,
                             itemName: item.subcategoryName,
                             fit: BoxFit.cover,
+                            isGray: item.isOutOfStock,
                           ),
                         ),
                       if (hasMultipleImages)
@@ -160,6 +162,36 @@ class _ItemCardState extends State<ItemCard> {
                             }),
                           ),
                         ),
+                      if (item.isOutOfStock)
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD32F2F),
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.red.withAlpha(80),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              'Out of Stock',
+                              style: GoogleFonts.outfit(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -191,7 +223,7 @@ class _ItemCardState extends State<ItemCard> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      '₹${item.amount.toStringAsFixed(2)} / kg',
+                      '₹${item.amount.toStringAsFixed(2)}${item.priceUnitSuffix}',
                       style: GoogleFonts.outfit(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -199,24 +231,30 @@ class _ItemCardState extends State<ItemCard> {
                       ),
                     ),
                   ),
-                  Consumer<CartProvider>(
-                    builder: (context, cartProvider, child) {
-                      final inCart = cartProvider.isItemInCart(item.id);
-                      return Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () async {
-                            final authProvider =
-                                Provider.of<AuthProvider>(context, listen: false);
-                            if (!authProvider.isAuthenticated) {
-                              AuthDialogHelper.showLoginRequiredAlert(context);
-                              return;
-                            }
+                  if (!item.isOutOfStock)
+                    Consumer<CartProvider>(
+                      builder: (context, cartProvider, child) {
+                        final inCart = cartProvider.isItemInCart(item.id);
+                        return Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              final authProvider = Provider.of<AuthProvider>(
+                                context,
+                                listen: false,
+                              );
+                              if (!authProvider.isAuthenticated) {
+                                AuthDialogHelper.showLoginRequiredAlert(
+                                  context,
+                                );
+                                return;
+                              }
 
-                            if (inCart) {
-                              try {
-                                await cartProvider.removeFromCart(item.id);
-                                if (!context.mounted) return;
+                              if (cartProvider.isItemProcessing(item.id)) {
+                                return;
+                              }
+
+                              if (inCart) {
                                 ScaffoldMessenger.of(context)
                                     .hideCurrentSnackBar();
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -236,36 +274,39 @@ class _ItemCardState extends State<ItemCard> {
                                     ),
                                   ),
                                 );
-                              } catch (e) {
-                                if (!context.mounted) return;
-                                final errorMsg = e
-                                    .toString()
-                                    .replaceAll('Exception: ', '');
-                                ScaffoldMessenger.of(context)
-                                    .hideCurrentSnackBar();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      errorMsg,
-                                      style: GoogleFonts.outfit(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: Colors.white,
+
+                                cartProvider.removeFromCart(item.id).catchError(
+                                  (e) {
+                                    if (!context.mounted) return;
+                                    final errorMsg = e.toString().replaceAll(
+                                      'Exception: ',
+                                      '',
+                                    );
+                                    ScaffoldMessenger.of(context)
+                                        .hideCurrentSnackBar();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          errorMsg,
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        duration: const Duration(seconds: 4),
+                                        backgroundColor: Colors.redAccent,
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                    duration: const Duration(seconds: 4),
-                                    backgroundColor: Colors.redAccent,
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
+                                    );
+                                  },
                                 );
-                              }
-                            } else {
-                              try {
-                                await cartProvider.addToCart(item);
-                                if (!context.mounted) return;
+                              } else {
                                 ScaffoldMessenger.of(context)
                                     .hideCurrentSnackBar();
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -285,65 +326,70 @@ class _ItemCardState extends State<ItemCard> {
                                     ),
                                   ),
                                 );
-                              } catch (e) {
-                                if (!context.mounted) return;
-                                final errorMsg = e
-                                    .toString()
-                                    .replaceAll('Exception: ', '');
-                                ScaffoldMessenger.of(context)
-                                    .hideCurrentSnackBar();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      errorMsg,
-                                      style: GoogleFonts.outfit(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: Colors.white,
+
+                                cartProvider.addToCart(item).catchError((e) {
+                                  if (!context.mounted) return;
+                                  final errorMsg = e.toString().replaceAll(
+                                    'Exception: ',
+                                    '',
+                                  );
+                                  ScaffoldMessenger.of(context)
+                                      .hideCurrentSnackBar();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        errorMsg,
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      duration: const Duration(seconds: 4),
+                                      backgroundColor: Colors.redAccent,
+                                      behavior: SnackBarBehavior.floating,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
                                     ),
-                                    duration: const Duration(seconds: 4),
-                                    backgroundColor: Colors.redAccent,
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                );
+                                  );
+                                });
                               }
-                            }
-                          },
-                          borderRadius: BorderRadius.circular(20),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: inCart
-                                  ? const Color(0xFFFF5252)
-                                  : AppTheme.darkGreen,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (inCart
-                                          ? Colors.red
-                                          : AppTheme.darkGreen)
-                                      .withAlpha(76),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              inCart ? Icons.close_rounded : Icons.add_rounded,
-                              color: Colors.white,
-                              size: 20,
+                            },
+                            borderRadius: BorderRadius.circular(20),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: inCart
+                                    ? const Color(0xFFFF5252)
+                                    : AppTheme.darkGreen,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color:
+                                        (inCart
+                                                ? Colors.red
+                                                : AppTheme.darkGreen)
+                                            .withAlpha(76),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                inCart
+                                    ? Icons.close_rounded
+                                    : Icons.add_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    ),
                 ],
               ),
             ],

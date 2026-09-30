@@ -8,13 +8,16 @@ import 'package:provider/provider.dart';
 import '../../config/env_config.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/cart_provider.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_picker_helper.dart';
+import '../auth/login_screen.dart';
 import '../main_navigation_screen.dart';
 import '../widgets/grace_app_bar.dart';
 import '../widgets/grace_bottom_nav_bar.dart';
 import '../widgets/grace_drawer.dart';
+import '../widgets/skeleton_loader.dart';
 
 class AccountDetailsScreen extends StatefulWidget {
   const AccountDetailsScreen({super.key});
@@ -35,6 +38,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isDeleting = false;
 
   bool _obscureCurrentPassword = true;
   bool _obscureNewPassword = true;
@@ -130,8 +134,77 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   Future<void> _handlePickImage() async {
     if (_isSaving) return;
+
+    final ImageSource? selectedSource = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      backgroundColor: Colors.white,
+      builder: (BuildContext ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Text(
+                  'Select Profile Photo',
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.darkGreen,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_library_outlined,
+                    color: AppTheme.darkGreen,
+                  ),
+                  title: Text(
+                    'Choose from Gallery',
+                    style: GoogleFonts.outfit(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_camera_outlined,
+                    color: AppTheme.darkGreen,
+                  ),
+                  title: Text(
+                    'Take a Photo',
+                    style: GoogleFonts.outfit(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selectedSource == null) return;
+
     try {
-      final pickerResult = await pickProfileImage();
+      final pickerResult = await pickProfileImage(source: selectedSource);
       if (pickerResult != null) {
         setState(() {
           _selectedImageBytes = pickerResult.bytes;
@@ -232,11 +305,23 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     );
 
     if (mounted) {
-      setState(() {
-        _isSaving = false;
-      });
-
       if (result['success'] == true) {
+        final updatedUser = authProvider.user;
+        setState(() {
+          _isSaving = false;
+          _selectedImageBytes = null;
+          _selectedImageFileName = null;
+          if (updatedUser?.profileImage != null &&
+              updatedUser!.profileImage!.isNotEmpty) {
+            _profileImageUrl = updatedUser.profileImage;
+          }
+        });
+
+        try {
+          PaintingBinding.instance.imageCache.clear();
+          PaintingBinding.instance.imageCache.clearLiveImages();
+        } catch (_) {}
+
         _showSnackBar('Profile changes saved successfully!');
         _currentPasswordController.clear();
         _newPasswordController.clear();
@@ -248,6 +333,10 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
           }
         });
       } else {
+        setState(() {
+          _isSaving = false;
+        });
+
         final errorMsg =
             result['message']?.toString() ??
             'Failed to update account details. Please try again.';
@@ -277,6 +366,102 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     }
   }
 
+  Future<void> _handleDeleteAccount() async {
+    if (_isSaving || _isDeleting) return;
+
+    final authProvider = context.read<AuthProvider>();
+    final cartProvider = context.read<CartProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Delete Account',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.bold,
+              color: AppTheme.darkGreen,
+            ),
+          ),
+          content: Text(
+            'Are you sure you want to permanently delete your account?',
+            style: GoogleFonts.outfit(
+              fontSize: 14,
+              color: AppTheme.textDark,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                'Okay',
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.deleteRed,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isDeleting = true;
+    });
+
+    final result = await authProvider.deleteAccount();
+
+    if (mounted) {
+      setState(() {
+        _isDeleting = false;
+      });
+
+      if (result['success'] == true) {
+        cartProvider.clearCart();
+
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Your account has been deleted permanently.',
+              style: GoogleFonts.outfit(color: Colors.white),
+            ),
+            backgroundColor: AppTheme.darkGreen,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
+        navigator.pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+          (route) => false,
+        );
+      } else {
+        final errorMsg =
+            result['message']?.toString() ??
+            'Failed to delete account. Please try again.';
+        _showSnackBar(errorMsg, isError: true);
+      }
+    }
+  }
+
   Widget _buildProfileAvatarImage(String? imageUrl) {
     Widget buildFallbackIcon() {
       return Container(
@@ -288,6 +473,14 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     Widget buildDefaultAssetImage() {
       return Image.asset(
         'assets/images/Profile.jpg',
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => buildFallbackIcon(),
+      );
+    }
+
+    if (_selectedImageBytes != null && _selectedImageBytes!.isNotEmpty) {
+      return Image.memory(
+        _selectedImageBytes!,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) => buildFallbackIcon(),
       );
@@ -317,6 +510,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     final fullUrl = EnvConfig.formatImageUrl(trimmed);
     return Image.network(
       fullUrl,
+      key: ValueKey(fullUrl),
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) => buildDefaultAssetImage(),
     );
@@ -335,6 +529,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: const GraceAppBar(),
@@ -346,8 +541,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         },
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppTheme.darkGreen),
+          ? const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
+              child: ProfileScreenSkeleton(),
             )
           : SingleChildScrollView(
               padding: const EdgeInsets.symmetric(
@@ -392,25 +588,31 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                         // Profile Image Avatar with Edit Badge
                         Stack(
                           children: [
-                            Container(
-                              width: 100,
-                              height: 100,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: AppTheme.limeGreen,
-                                  width: 3,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withAlpha(20),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
+                            GestureDetector(
+                              onTap: _isSaving ? null : _handlePickImage,
+                              child: Container(
+                                width: 100,
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: AppTheme.limeGreen,
+                                    width: 3,
                                   ),
-                                ],
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withAlpha(20),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: _buildProfileAvatarImage(
+                                  _profileImageUrl ??
+                                      authProvider.user?.profileImage,
+                                ),
                               ),
-                              clipBehavior: Clip.antiAlias,
-                              child: _buildProfileAvatarImage(_profileImageUrl),
                             ),
                             Positioned(
                               bottom: 0,
@@ -446,7 +648,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Update your personal information below to keep your Grass Fresh profile current.',
+                          'Update your personal information below to keep your Grace Fresh profile current.',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.outfit(
                             fontSize: 13.5,
@@ -475,12 +677,13 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Email Address Field (Editable)
+                              // Email Address Field (Disabled)
                               _buildFieldLabel('Email Address'),
                               const SizedBox(height: 8),
                               TextFormField(
                                 controller: _emailController,
-                                enabled: true,
+                                enabled: false,
+                                readOnly: true,
                                 keyboardType: TextInputType.emailAddress,
                                 style: GoogleFonts.outfit(
                                   fontSize: 15,
@@ -502,7 +705,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                               ),
                               const SizedBox(height: 20),
 
-                              // Full Name Field
+                              // Full Name Field (Editable)
                               _buildFieldLabel('Full Name'),
                               const SizedBox(height: 8),
                               TextFormField(
@@ -528,7 +731,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                               ),
                               const SizedBox(height: 20),
 
-                              // Phone Number Field (Numbers Only)
+                              // Phone Number Field (Editable)
                               _buildFieldLabel('Phone Number'),
                               const SizedBox(height: 8),
                               TextFormField(
@@ -773,6 +976,38 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                                 fontWeight: FontWeight.bold,
                                 color: const Color(0xFF4A2E2B),
                               ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: InkWell(
+                            onTap: _isSaving || _isDeleting
+                                ? null
+                                : _handleDeleteAccount,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 8,
+                                horizontal: 16,
+                              ),
+                              child: _isDeleting
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: AppTheme.deleteRed,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Text(
+                                      'Delete Account Permanently',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.deleteRed,
+                                      ),
+                                    ),
                             ),
                           ),
                         ),

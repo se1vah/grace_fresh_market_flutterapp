@@ -8,6 +8,7 @@ import '../item_details/item_details_screen.dart';
 import '../widgets/grace_app_bar.dart';
 import '../widgets/grace_drawer.dart';
 import '../widgets/custom_network_image.dart';
+import '../widgets/skeleton_loader.dart';
 import 'widgets/category_pills.dart';
 import 'widgets/item_card.dart';
 
@@ -194,6 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     itemName:
                                                         item.subcategoryName,
                                                     fit: BoxFit.cover,
+                                                    isGray: item.isOutOfStock,
                                                   ),
                                                 ),
                                                 title: Text(
@@ -250,13 +252,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Consumer<ShopProvider>(
               builder: (context, shopProvider, child) {
                 if (shopProvider.isLoadingItems) {
-                  return const SliverFillRemaining(
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: AppTheme.darkGreen,
-                      ),
-                    ),
-                  );
+                  return const SliverProductGridSkeleton();
                 }
 
                 final items = shopProvider.activeItems;

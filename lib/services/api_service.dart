@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -11,7 +10,8 @@ import '../models/category.dart';
 import '../models/sub_category_item.dart';
 import '../models/cart_item.dart';
 import '../models/address_model.dart';
-import '../models/checkout_details.dart';
+import '../models/order_model.dart';
+import '../models/notification_model.dart';
 import '../utils/cookie_helper.dart';
 
 class ApiService {
@@ -24,13 +24,15 @@ class ApiService {
     required String phoneNumber,
     required String email,
     required String password,
+    String? fcmToken,
   }) async {
     final uri = Uri.parse('$userBaseUrl/create');
-    final payload = {
+    final payload = <String, dynamic>{
       'fullName': fullName,
       'phoneNumber': phoneNumber,
       'email': email,
       'password': password,
+      if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
     };
 
     try {
@@ -78,9 +80,14 @@ class ApiService {
   Future<Map<String, dynamic>> loginUser({
     required String emailOrPhone,
     required String password,
+    String? fcmToken,
   }) async {
     final uri = Uri.parse('$userBaseUrl/login');
-    final payload = {'email': emailOrPhone, 'password': password};
+    final payload = <String, dynamic>{
+      'email': emailOrPhone,
+      'password': password,
+      if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
+    };
 
     try {
       final response = await http
@@ -126,13 +133,54 @@ class ApiService {
     }
   }
 
+  /// Logout user API
+  Future<Map<String, dynamic>> logoutUser([String? explicitToken]) async {
+    final primaryUri = Uri.parse('$userBaseUrl/logout');
+
+    final token = (explicitToken != null && explicitToken.isNotEmpty)
+        ? explicitToken
+        : CookieHelper.getCookie(EnvConfig.authCookieName);
+    final userCookie = CookieHelper.getCookie(EnvConfig.userCookieName);
+
+    final headers = <String, String>{'Content-Type': 'application/json'};
+
+    final List<String> cookiesList = [];
+    if (token != null && token.isNotEmpty) {
+      cookiesList.add('${EnvConfig.authCookieName}=$token');
+      headers['Authorization'] = 'Bearer $token';
+    }
+    if (userCookie != null && userCookie.isNotEmpty) {
+      cookiesList.add('${EnvConfig.userCookieName}=$userCookie');
+    }
+    if (cookiesList.isNotEmpty) {
+      headers['Cookie'] = cookiesList.join('; ');
+    }
+
+    final payload = {if (token != null && token.isNotEmpty) 'token': token};
+
+    try {
+      final response = await http
+          .post(primaryUri, headers: headers, body: jsonEncode(payload))
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+
+      final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      if (body is Map<String, dynamic>) {
+        return body;
+      }
+      return {'success': true, 'message': 'Logged out successfully'};
+    } catch (e) {
+      debugPrint('Logout API Error: $e');
+      return {'success': false, 'message': 'Logout API call error: $e'};
+    }
+  }
+
   /// Fetch Categories from Backend API
   Future<List<CategoryModel>> getCategories() async {
     final uri = Uri.parse('$baseUrl/categories');
     try {
       final response = await http
           .get(uri)
-          .timeout(Duration(seconds: EnvConfig.shortTimeoutSeconds));
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         List<dynamic> list = [];
@@ -147,6 +195,9 @@ class ApiService {
           'Failed to fetch categories (Server error ${response.statusCode})',
         );
       }
+    } on TimeoutException {
+      debugPrint('Categories API fetch timed out after ${EnvConfig.apiTimeoutSeconds}s');
+      throw Exception('Connection timed out while loading categories. Please try again.');
     } catch (e) {
       debugPrint('Categories API fetch error: $e');
       rethrow;
@@ -185,7 +236,7 @@ class ApiService {
     try {
       final response = await http
           .get(uri)
-          .timeout(Duration(seconds: EnvConfig.shortTimeoutSeconds));
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         List<dynamic> list = [];
@@ -200,6 +251,9 @@ class ApiService {
           'Failed to fetch sub-categories (Server error ${response.statusCode})',
         );
       }
+    } on TimeoutException {
+      debugPrint('SubCategories API fetch timed out after ${EnvConfig.apiTimeoutSeconds}s');
+      throw Exception('Connection timed out while loading products. Please try again.');
     } catch (e) {
       debugPrint('SubCategories API fetch error: $e');
       rethrow;
@@ -271,7 +325,7 @@ class ApiService {
     }
   }
 
-  /// Fetch App Setting from Backend API: GET http://localhost/api/shop/app-setting
+  /// Fetch App Setting from Backend API
   Future<Map<String, dynamic>> getAppSetting() async {
     final uri = Uri.parse(EnvConfig.appSettingUrl);
     try {
@@ -290,22 +344,6 @@ class ApiService {
         );
       }
     } catch (e) {
-      if (!uri.toString().startsWith('http://localhost/api/shop')) {
-        try {
-          final fallbackUri = Uri.parse(
-            'http://localhost/api/shop/app-setting',
-          );
-          final response = await http
-              .get(fallbackUri)
-              .timeout(Duration(seconds: EnvConfig.shortTimeoutSeconds));
-          if (response.statusCode == 200) {
-            final decoded = jsonDecode(response.body);
-            if (decoded is Map<String, dynamic>) {
-              return decoded;
-            }
-          }
-        } catch (_) {}
-      }
       debugPrint('App setting API fetch error: $e');
       rethrow;
     }
@@ -447,7 +485,7 @@ class ApiService {
     try {
       final response = await http
           .get(uri, headers: headers)
-          .timeout(Duration(seconds: EnvConfig.shortTimeoutSeconds));
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -495,6 +533,7 @@ class ApiService {
               weight = formatQuantityToDisplayUnit(
                 qty,
                 subCategoryItem.isQuantityType,
+                subCategoryItem.subCategoryType,
               );
             }
 
@@ -525,6 +564,9 @@ class ApiService {
         } catch (_) {}
         throw Exception(msg);
       }
+    } on TimeoutException {
+      debugPrint('Cart Get All API timed out after ${EnvConfig.apiTimeoutSeconds}s');
+      throw Exception('Connection timed out while fetching cart items.');
     } catch (e) {
       if (e is Exception) rethrow;
       debugPrint('Cart Get All API error (GET ${EnvConfig.cartGetAllUrl}): $e');
@@ -654,63 +696,7 @@ class ApiService {
     }
   }
 
-  /// Fetch checkout details (delivery address and payment method)
-  /// API endpoint: `GET http://localhost:3000/api/cart/get-check-out-details`
-  Future<CheckoutDetails?> getCheckoutDetails() async {
-    final uri = Uri.parse(EnvConfig.cartCheckoutDetailsUrl);
 
-    final token = CookieHelper.getCookie(EnvConfig.authCookieName);
-    final userCookie = CookieHelper.getCookie(EnvConfig.userCookieName);
-
-    final headers = <String, String>{'Content-Type': 'application/json'};
-
-    final List<String> cookiesList = [];
-    if (token != null && token.isNotEmpty) {
-      cookiesList.add('${EnvConfig.authCookieName}=$token');
-      headers['Authorization'] = 'Bearer $token';
-    }
-    if (userCookie != null && userCookie.isNotEmpty) {
-      cookiesList.add('${EnvConfig.userCookieName}=$userCookie');
-    }
-    if (cookiesList.isNotEmpty) {
-      headers['Cookie'] = cookiesList.join('; ');
-    }
-
-    try {
-      final response = await http
-          .get(uri, headers: headers)
-          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
-
-      if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        if (body is Map<String, dynamic>) {
-          return CheckoutDetails.fromJson(body);
-        }
-        return null;
-      } else {
-        String msg =
-            'Failed to fetch checkout details (${response.statusCode}).';
-        try {
-          final decoded = jsonDecode(response.body);
-          if (decoded is Map<String, dynamic>) {
-            if (decoded['message'] != null) {
-              msg = decoded['message'].toString();
-            } else if (decoded['error'] != null) {
-              msg = decoded['error'].toString();
-            }
-          }
-        } catch (_) {}
-        debugPrint('Checkout Details API info: $msg');
-        throw Exception(msg);
-      }
-    } catch (e) {
-      if (e is Exception) rethrow;
-      debugPrint(
-        'Checkout Details API Error (GET ${EnvConfig.cartCheckoutDetailsUrl}): $e',
-      );
-      throw Exception('Unable to fetch checkout details.');
-    }
-  }
 
   /// Fetch all user addresses from API endpoint: GET http://localhost:3000/api/user/address/get-all
   Future<List<AddressModel>> getUserAddresses() async {
@@ -1067,10 +1053,9 @@ class ApiService {
     }
   }
 
-  /// Fetch user profile from API: GET http://localhost:3000/api/user/profile
+  /// Fetch user profile from API
   Future<Map<String, dynamic>> getUserProfile([String? explicitToken]) async {
     final primaryUri = Uri.parse(EnvConfig.userProfileUrl);
-    final fallbackUri = Uri.parse('http://localhost/api/user/profile');
 
     // Retrieve local cookies (user_token and user_data)
     final token = (explicitToken != null && explicitToken.isNotEmpty)
@@ -1092,18 +1077,9 @@ class ApiService {
     }
 
     try {
-      var response = await http
+      final response = await http
           .get(primaryUri, headers: headers)
           .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
-
-      if (response.statusCode != 200 &&
-          primaryUri.toString() != fallbackUri.toString()) {
-        try {
-          response = await http
-              .get(fallbackUri, headers: headers)
-              .timeout(Duration(seconds: EnvConfig.shortTimeoutSeconds));
-        } catch (_) {}
-      }
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -1137,7 +1113,7 @@ class ApiService {
       debugPrint('User profile GET API error ($primaryUri): $e');
     }
 
-    // Fallback to local user cookie if API endpoint fails or offline
+    // Return cached user cookie if API endpoint fails or offline
     if (userCookie != null && userCookie.isNotEmpty) {
       try {
         final Map<String, dynamic> userData = jsonDecode(userCookie);
@@ -1293,6 +1269,349 @@ class ApiService {
         'message':
             'Unable to connect to server (${EnvConfig.serverHost}). Please check your network connection or server status.',
       };
+    }
+  }
+
+  /// Create Order API endpoint: POST http://localhost:3000/api/user/orders/create
+  /// Body payload: { "cartId": [12, 13, 14] }
+  Future<Map<String, dynamic>> placeOrder(List<dynamic> cartIds) async {
+    final uri = Uri.parse(EnvConfig.orderCreateUrl);
+
+    final token = CookieHelper.getCookie(EnvConfig.authCookieName);
+    final userCookie = CookieHelper.getCookie(EnvConfig.userCookieName);
+
+    final headers = <String, String>{'Content-Type': 'application/json'};
+
+    final List<String> cookiesList = [];
+    if (token != null && token.isNotEmpty) {
+      cookiesList.add('${EnvConfig.authCookieName}=$token');
+      headers['Authorization'] = 'Bearer $token';
+    }
+    if (userCookie != null && userCookie.isNotEmpty) {
+      cookiesList.add('${EnvConfig.userCookieName}=$userCookie');
+    }
+    if (cookiesList.isNotEmpty) {
+      headers['Cookie'] = cookiesList.join('; ');
+    }
+
+    final formattedCartIds = cartIds.map((id) {
+      if (id is int) return id;
+      final parsed = int.tryParse(id.toString());
+      return parsed ?? id;
+    }).toList();
+
+    final payload = {'cartId': formattedCartIds};
+
+    try {
+      final response = await http
+          .post(uri, headers: headers, body: jsonEncode(payload))
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+
+      final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if (body is Map<String, dynamic>) {
+          if (body['success'] == false || body['status'] == false) {
+            String msg = 'Failed to place order.';
+            if (body['message'] != null) {
+              msg = body['message'].toString();
+            } else if (body['error'] != null) {
+              msg = body['error'].toString();
+            } else if (body['errors'] != null) {
+              msg = body['errors'].toString();
+            }
+            throw Exception(msg);
+          }
+          return body;
+        }
+        return {'success': true, 'message': 'Order placed successfully'};
+      } else {
+        String msg = 'Failed to place order (${response.statusCode}).';
+        if (body is Map<String, dynamic>) {
+          if (body['message'] != null) {
+            msg = body['message'].toString();
+          } else if (body['error'] != null) {
+            msg = body['error'].toString();
+          } else if (body['errors'] != null) {
+            msg = body['errors'].toString();
+          }
+        }
+        debugPrint('Place Order API Error: $msg');
+        throw Exception(msg);
+      }
+    } catch (e) {
+      if (e is Exception) rethrow;
+      debugPrint(
+        'Place Order API Error (POST ${EnvConfig.orderCreateUrl}): $e',
+      );
+      throw Exception('Unable to place order.');
+    }
+  }
+
+  /// Fetch user orders from API endpoint: GET https://grace-fresh-market-eta.vercel.app/api/users/orders/get-all
+  Future<List<OrderModel>> getUserOrders() async {
+    final uri = Uri.parse(EnvConfig.orderGetAllUrl);
+
+    final token = CookieHelper.getCookie(EnvConfig.authCookieName);
+    final userCookie = CookieHelper.getCookie(EnvConfig.userCookieName);
+
+    final headers = <String, String>{'Content-Type': 'application/json'};
+
+    final List<String> cookiesList = [];
+    if (token != null && token.isNotEmpty) {
+      cookiesList.add('${EnvConfig.authCookieName}=$token');
+      headers['Authorization'] = 'Bearer $token';
+    }
+    if (userCookie != null && userCookie.isNotEmpty) {
+      cookiesList.add('${EnvConfig.userCookieName}=$userCookie');
+    }
+    if (cookiesList.isNotEmpty) {
+      headers['Cookie'] = cookiesList.join('; ');
+    }
+
+    try {
+      final response = await http
+          .get(uri, headers: headers)
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        List<dynamic> rawList = [];
+
+        if (decoded is Map<String, dynamic>) {
+          if (decoded.containsKey('data') && decoded['data'] is List) {
+            rawList = decoded['data'] as List<dynamic>;
+          } else if (decoded.containsKey('orders') &&
+              decoded['orders'] is List) {
+            rawList = decoded['orders'] as List<dynamic>;
+          }
+        } else if (decoded is List) {
+          rawList = decoded;
+        }
+
+        final orders = rawList
+            .whereType<Map<String, dynamic>>()
+            .map((item) => OrderModel.fromJson(item))
+            .toList();
+
+        return orders;
+      }
+    } catch (e) {
+      debugPrint(
+        'Orders Get All API error (GET ${EnvConfig.orderGetAllUrl}): $e',
+      );
+    }
+
+    return [];
+  }
+
+  /// Fetch single order details by ID from API: GET https://grace-fresh-market-eta.vercel.app/api/users/orders/{orderId}
+  Future<OrderModel?> getOrderById(
+    dynamic orderId, {
+    dynamic notificationId,
+  }) async {
+    final cleanId = orderId.toString().replaceAll(RegExp(r'[^0-9]'), '');
+    final effectiveId = cleanId.isNotEmpty ? cleanId : orderId;
+    final uri = Uri.parse(
+      EnvConfig.getOrderByIdUrl(effectiveId, notificationId: notificationId),
+    );
+
+    final token = CookieHelper.getCookie(EnvConfig.authCookieName);
+    final userCookie = CookieHelper.getCookie(EnvConfig.userCookieName);
+
+    final headers = <String, String>{'Content-Type': 'application/json'};
+
+    final List<String> cookiesList = [];
+    if (token != null && token.isNotEmpty) {
+      cookiesList.add('${EnvConfig.authCookieName}=$token');
+      headers['Authorization'] = 'Bearer $token';
+    }
+    if (userCookie != null && userCookie.isNotEmpty) {
+      cookiesList.add('${EnvConfig.userCookieName}=$userCookie');
+    }
+    if (cookiesList.isNotEmpty) {
+      headers['Cookie'] = cookiesList.join('; ');
+    }
+
+    try {
+      final response = await http
+          .get(uri, headers: headers)
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        Map<String, dynamic>? orderJson;
+
+        if (decoded is Map<String, dynamic>) {
+          if (decoded.containsKey('data') && decoded['data'] is Map<String, dynamic>) {
+            orderJson = decoded['data'] as Map<String, dynamic>;
+          } else if (decoded.containsKey('order') && decoded['order'] is Map<String, dynamic>) {
+            orderJson = decoded['order'] as Map<String, dynamic>;
+          } else {
+            orderJson = decoded;
+          }
+        } else if (decoded is List && decoded.isNotEmpty) {
+          if (decoded.first is Map<String, dynamic>) {
+            orderJson = decoded.first as Map<String, dynamic>;
+          }
+        }
+
+        if (orderJson != null) {
+          return OrderModel.fromJson(orderJson);
+        }
+      } else {
+        debugPrint('Order Get By ID API error status ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Order Get By ID API error ($uri): $e');
+    }
+
+    // Fallback: search in getUserOrders() list
+    try {
+      final allOrders = await getUserOrders();
+      for (final order in allOrders) {
+        if (order.id.toString() == effectiveId.toString() ||
+            order.id.toString() == orderId.toString()) {
+          return order;
+        }
+      }
+    } catch (e) {
+      debugPrint('Fallback getUserOrders error: $e');
+    }
+
+    return null;
+  }
+
+  /// Fetch user notifications from API endpoint: GET /api/user/notifications
+  Future<List<NotificationModel>> getUserNotifications([String? explicitToken]) async {
+    final uri = Uri.parse(EnvConfig.notificationsUrl);
+
+    final token = (explicitToken != null && explicitToken.isNotEmpty)
+        ? explicitToken
+        : CookieHelper.getCookie(EnvConfig.authCookieName);
+    final userCookie = CookieHelper.getCookie(EnvConfig.userCookieName);
+
+    final headers = <String, String>{'Content-Type': 'application/json'};
+
+    final List<String> cookiesList = [];
+    if (token != null && token.isNotEmpty) {
+      cookiesList.add('${EnvConfig.authCookieName}=$token');
+      headers['Authorization'] = 'Bearer $token';
+    }
+    if (userCookie != null && userCookie.isNotEmpty) {
+      cookiesList.add('${EnvConfig.userCookieName}=$userCookie');
+    }
+    if (cookiesList.isNotEmpty) {
+      headers['Cookie'] = cookiesList.join('; ');
+    }
+
+    try {
+      final response = await http
+          .get(uri, headers: headers)
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        List<dynamic> rawList = [];
+
+        if (decoded is Map<String, dynamic>) {
+          if (decoded.containsKey('data') && decoded['data'] is List) {
+            rawList = decoded['data'] as List<dynamic>;
+          } else if (decoded.containsKey('notifications') &&
+              decoded['notifications'] is List) {
+            rawList = decoded['notifications'] as List<dynamic>;
+          } else if (decoded.containsKey('items') &&
+              decoded['items'] is List) {
+            rawList = decoded['items'] as List<dynamic>;
+          }
+        } else if (decoded is List) {
+          rawList = decoded;
+        }
+
+        final notifications = rawList
+            .whereType<Map<String, dynamic>>()
+            .map((item) => NotificationModel.fromJson(item))
+            .toList();
+
+        return notifications;
+      } else if (response.statusCode == 404) {
+        return [];
+      } else {
+        String msg = 'Failed to fetch notifications (${response.statusCode}).';
+        try {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map<String, dynamic>) {
+            if (decoded['message'] != null) {
+              msg = decoded['message'].toString();
+            } else if (decoded['error'] != null) {
+              msg = decoded['error'].toString();
+            }
+          }
+        } catch (_) {}
+        throw Exception(msg);
+      }
+    } catch (e) {
+      debugPrint(
+        'Notifications Get All API error (GET ${EnvConfig.notificationsUrl}): $e',
+      );
+      if (e is Exception) rethrow;
+      throw Exception('Unable to fetch notifications.');
+    }
+  }
+
+  /// Delete user account API: DELETE https://grace-fresh-market-eta.vercel.app/api/user/delete/:userId
+  Future<Map<String, dynamic>> deleteUserAccount(String userId) async {
+    final uri = Uri.parse(EnvConfig.userDeleteUrl(userId));
+
+    final token = CookieHelper.getCookie(EnvConfig.authCookieName);
+    final userCookie = CookieHelper.getCookie(EnvConfig.userCookieName);
+
+    final headers = <String, String>{'Content-Type': 'application/json'};
+
+    final List<String> cookiesList = [];
+    if (token != null && token.isNotEmpty) {
+      cookiesList.add('${EnvConfig.authCookieName}=$token');
+      headers['Authorization'] = 'Bearer $token';
+    }
+    if (userCookie != null && userCookie.isNotEmpty) {
+      cookiesList.add('${EnvConfig.userCookieName}=$userCookie');
+    }
+    if (cookiesList.isNotEmpty) {
+      headers['Cookie'] = cookiesList.join('; ');
+    }
+
+    try {
+      final response = await http
+          .delete(uri, headers: headers)
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+
+      final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+
+      if (response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          response.statusCode == 204) {
+        if (body is Map<String, dynamic>) {
+          return body;
+        }
+        return {'success': true, 'message': 'Account deleted successfully.'};
+      } else {
+        String msg = 'Failed to delete account (${response.statusCode}).';
+        if (body is Map<String, dynamic>) {
+          if (body['message'] != null) {
+            msg = body['message'].toString();
+          } else if (body['error'] != null) {
+            msg = body['error'].toString();
+          } else if (body['errors'] != null) {
+            msg = body['errors'].toString();
+          }
+        }
+        throw Exception(msg);
+      }
+    } catch (e) {
+      if (e is Exception && !e.toString().contains('Unable to connect')) {
+        rethrow;
+      }
+      debugPrint('Delete Account API Error: $e');
+      throw Exception('Unable to delete account. Please try again.');
     }
   }
 

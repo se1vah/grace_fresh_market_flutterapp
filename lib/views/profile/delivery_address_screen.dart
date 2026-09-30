@@ -9,6 +9,7 @@ import '../main_navigation_screen.dart';
 import '../widgets/grace_app_bar.dart';
 import '../widgets/grace_bottom_nav_bar.dart';
 import '../widgets/grace_drawer.dart';
+import '../widgets/skeleton_loader.dart';
 
 class DeliveryAddressScreen extends StatefulWidget {
   const DeliveryAddressScreen({super.key});
@@ -122,8 +123,11 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
               color: AppTheme.textSecondary,
             ),
           ),
-          actionsPadding:
-              const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+          actionsPadding: const EdgeInsets.only(
+            left: 16,
+            right: 16,
+            bottom: 16,
+          ),
           actions: [
             OutlinedButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -276,14 +280,7 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
 
                 // Content according to state
                 if (_isLoading)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 60.0),
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: AppTheme.darkGreen,
-                      ),
-                    ),
-                  )
+                  const DeliveryAddressSkeleton()
                 else if (_errorMessage != null)
                   _buildErrorView()
                 else if (_addresses.isEmpty)
@@ -430,7 +427,8 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
                 )
               else
                 InkWell(
-                  onTap: (_settingDefaultAddressId != null ||
+                  onTap:
+                      (_settingDefaultAddressId != null ||
                           _deletingAddressId != null)
                       ? null
                       : () => _handleSetDefaultAddress(address.id),
@@ -445,7 +443,8 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
                       style: GoogleFonts.outfit(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: (_settingDefaultAddressId != null ||
+                        color:
+                            (_settingDefaultAddressId != null ||
                                 _deletingAddressId != null)
                             ? AppTheme.textSecondary
                             : AppTheme.darkGreen,
@@ -499,7 +498,8 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
                 child: SizedBox(
                   height: 42,
                   child: ElevatedButton(
-                    onPressed: (_settingDefaultAddressId != null ||
+                    onPressed:
+                        (_settingDefaultAddressId != null ||
                             _deletingAddressId != null)
                         ? null
                         : () => _openAddressFormBottomSheet(address),
@@ -526,7 +526,8 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
                 child: SizedBox(
                   height: 42,
                   child: OutlinedButton(
-                    onPressed: (_deletingAddressId != null ||
+                    onPressed:
+                        (_deletingAddressId != null ||
                             _settingDefaultAddressId != null)
                         ? null
                         : () => _handleDeleteAddress(address),
@@ -541,8 +542,8 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                     ),
-                    child: _deletingAddressId?.toString() ==
-                            address.id.toString()
+                    child:
+                        _deletingAddressId?.toString() == address.id.toString()
                         ? const SizedBox(
                             width: 18,
                             height: 18,
@@ -694,24 +695,18 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
     super.initState();
     final addr = widget.addressToEdit;
 
-    _buildingNameController =
-        TextEditingController(text: addr?.buildingName ?? '');
-    _streetNameController =
-        TextEditingController(text: addr?.streetName ?? '');
+    _buildingNameController = TextEditingController(
+      text: addr?.buildingName ?? '',
+    );
+    _streetNameController = TextEditingController(text: addr?.streetName ?? '');
     _cityController = TextEditingController(
-      text: addr != null && addr.city.isNotEmpty
-          ? addr.city
-          : 'Thangachimadam',
+      text: addr != null && addr.city.isNotEmpty ? addr.city : 'Thangachimadam',
     );
     _stateController = TextEditingController(
-      text: addr != null && addr.state.isNotEmpty
-          ? addr.state
-          : 'Tamilnadu',
+      text: addr != null && addr.state.isNotEmpty ? addr.state : 'Tamilnadu',
     );
     _pincodeController = TextEditingController(
-      text: addr != null && addr.pincode.isNotEmpty
-          ? addr.pincode
-          : '623529',
+      text: addr != null && addr.pincode.isNotEmpty ? addr.pincode : '623529',
     );
 
     if (addr != null && addr.addressType.isNotEmpty) {
@@ -820,18 +815,25 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
     );
   }
 
-  InputDecoration _buildInputDecoration({String? hintText}) {
+  InputDecoration _buildInputDecoration({
+    String? hintText,
+    bool isDisabled = false,
+  }) {
     return InputDecoration(
       hintText: hintText,
       hintStyle: GoogleFonts.outfit(color: Colors.grey.shade400, fontSize: 14),
       filled: true,
-      fillColor: const Color(0xFFF5F6F8),
+      fillColor: isDisabled ? const Color(0xFFF3F4F6) : const Color(0xFFF5F6F8),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
       ),
       enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+      disabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
       ),
@@ -991,19 +993,16 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
                               _buildFieldLabel('CITY'),
                               TextFormField(
                                 controller: _cityController,
-                                enabled: !_isSubmitting,
+                                enabled: false,
+                                readOnly: true,
                                 textInputAction: TextInputAction.next,
-                                decoration: _buildInputDecoration(),
+                                decoration: _buildInputDecoration(
+                                  isDisabled: true,
+                                ),
                                 style: GoogleFonts.outfit(
                                   fontSize: 14,
                                   color: AppTheme.textDark,
                                 ),
-                                validator: (val) {
-                                  if (val == null || val.trim().isEmpty) {
-                                    return 'City is required';
-                                  }
-                                  return null;
-                                },
                               ),
                             ],
                           ),
@@ -1023,19 +1022,16 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
                               _buildFieldLabel('STATE'),
                               TextFormField(
                                 controller: _stateController,
-                                enabled: !_isSubmitting,
+                                enabled: false,
+                                readOnly: true,
                                 textInputAction: TextInputAction.next,
-                                decoration: _buildInputDecoration(),
+                                decoration: _buildInputDecoration(
+                                  isDisabled: true,
+                                ),
                                 style: GoogleFonts.outfit(
                                   fontSize: 14,
                                   color: AppTheme.textDark,
                                 ),
-                                validator: (val) {
-                                  if (val == null || val.trim().isEmpty) {
-                                    return 'State is required';
-                                  }
-                                  return null;
-                                },
                               ),
                             ],
                           ),
@@ -1048,26 +1044,20 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
                               _buildFieldLabel('Pincode'),
                               TextFormField(
                                 controller: _pincodeController,
-                                enabled: !_isSubmitting,
+                                enabled: false,
+                                readOnly: true,
                                 keyboardType: TextInputType.number,
                                 textInputAction: TextInputAction.done,
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly,
                                 ],
-                                decoration: _buildInputDecoration(),
+                                decoration: _buildInputDecoration(
+                                  isDisabled: true,
+                                ),
                                 style: GoogleFonts.outfit(
                                   fontSize: 14,
                                   color: AppTheme.textDark,
                                 ),
-                                validator: (val) {
-                                  if (val == null || val.trim().isEmpty) {
-                                    return 'Pincode is required';
-                                  }
-                                  if (!RegExp(r'^\d+$').hasMatch(val.trim())) {
-                                    return 'Enter valid numeric pincode';
-                                  }
-                                  return null;
-                                },
                               ),
                             ],
                           ),

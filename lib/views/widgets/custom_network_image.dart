@@ -6,12 +6,14 @@ class CustomNetworkImage extends StatelessWidget {
   final String imageUrl;
   final BoxFit fit;
   final String? itemName;
+  final bool isGray;
 
   const CustomNetworkImage({
     super.key,
     required this.imageUrl,
     this.fit = BoxFit.cover,
     this.itemName,
+    this.isGray = false,
   });
 
   @override
@@ -23,10 +25,10 @@ class CustomNetworkImage extends StatelessWidget {
     }
 
     if (kIsWeb) {
-      return buildWebImage(cleanUrl, fit);
+      return buildWebImage(cleanUrl, fit, isGray: isGray);
     }
 
-    return Image.network(
+    Widget imageWidget = Image.network(
       cleanUrl,
       fit: fit,
       loadingBuilder: (context, child, loadingProgress) {
@@ -39,6 +41,23 @@ class CustomNetworkImage extends StatelessWidget {
         return _buildBlankPlaceholder();
       },
     );
+
+    if (isGray) {
+      return ColorFiltered(
+        colorFilter: const ColorFilter.matrix(<double>[
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0,      0,      0,      1, 0,
+        ]),
+        child: Opacity(
+          opacity: 0.6,
+          child: imageWidget,
+        ),
+      );
+    }
+
+    return imageWidget;
   }
 
   Widget _buildBlankPlaceholder() {

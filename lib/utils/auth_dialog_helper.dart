@@ -11,7 +11,7 @@ class AuthDialogHelper {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Please login first.',
+          'Please sign in to add this item to your cart.',
           style: GoogleFonts.outfit(
             fontSize: 15,
             fontWeight: FontWeight.w500,
@@ -21,16 +21,11 @@ class AuthDialogHelper {
         backgroundColor: Colors.redAccent,
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
 
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const LoginScreen(),
-      ),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (context) => const LoginScreen()));
   }
 }

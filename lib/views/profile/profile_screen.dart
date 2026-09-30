@@ -12,8 +12,10 @@ import '../widgets/about_us_dialog.dart';
 import '../widgets/grace_app_bar.dart';
 import '../widgets/grace_drawer.dart';
 import '../widgets/help_support_dialog.dart';
+import '../widgets/skeleton_loader.dart';
 import 'account_details_screen.dart';
 import 'delivery_address_screen.dart';
+import 'my_orders_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -73,6 +75,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final fullUrl = EnvConfig.formatImageUrl(trimmed);
     return Image.network(
       fullUrl,
+      key: ValueKey(fullUrl),
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) => buildDefaultAssetImage(),
     );
@@ -83,15 +86,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final authProvider = context.watch<AuthProvider>();
     final user = authProvider.user;
 
-    final userName = user?.fullName.isNotEmpty == true
-        ? user!.fullName
-        : 'Jane Doe';
-    final userEmail = user?.email.isNotEmpty == true
-        ? user!.email
-        : 'jane@example.com';
-    final userPhone = user?.phoneNumber.isNotEmpty == true
-        ? user!.phoneNumber
-        : '';
+    final userName = user?.fullName ?? '';
+    final userEmail = user?.email ?? '';
+    final userPhone = user?.phoneNumber ?? '';
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -102,230 +99,260 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 540),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // User Profile Header Card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 32,
-                    horizontal: 20,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(10),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+            child: authProvider.isLoading
+                ? const ProfileScreenSkeleton()
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // User Profile Header Card
                       Container(
-                        width: 100,
-                        height: 100,
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 32,
+                          horizontal: 20,
+                        ),
                         decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppTheme.limeGreen,
-                            width: 0,
-                          ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withAlpha(15),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
+                              color: Colors.black.withAlpha(10),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
                             ),
                           ],
                         ),
-                        clipBehavior: Clip.antiAlias,
-                        child: _buildProfileAvatarImage(user?.profileImage),
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        userName,
-                        style: GoogleFonts.outfit(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.darkGreen,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AccountDetailsScreen(),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                width: 100,
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: AppTheme.limeGreen,
+                                    width: 0,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withAlpha(15),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: _buildProfileAvatarImage(
+                                  user?.profileImage,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            Text(
+                              userName,
+                              style: GoogleFonts.outfit(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.darkGreen,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              userEmail,
+                              style: GoogleFonts.outfit(
+                                fontSize: 14,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                            if (userPhone.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                userPhone,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 13,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 2),
+                            // Container(
+                            //   padding: const EdgeInsets.symmetric(
+                            //     horizontal: 12,
+                            //     vertical: 4,
+                            //   ),
+                            //   decoration: BoxDecoration(
+                            //     color: AppTheme.lightGreenBadge,
+                            //     borderRadius: BorderRadius.circular(12),
+                            //   ),
+                            //   child: Row(
+                            //     mainAxisSize: MainAxisSize.min,
+                            //     children: [
+                            //       const Icon(
+                            //         Icons.check_circle,
+                            //         color: AppTheme.primaryGreen,
+                            //         size: 16,
+                            //       ),
+                            //       const SizedBox(width: 6),
+                            //       Text(
+                            //         'Authenticated',
+                            //         style: GoogleFonts.outfit(
+                            //           fontSize: 12,
+                            //           fontWeight: FontWeight.bold,
+                            //           color: AppTheme.darkGreen,
+                            //         ),
+                            //       ),
+                            //     ],
+                            //   ),
+                            // ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        userEmail,
-                        style: GoogleFonts.outfit(
-                          fontSize: 14,
-                          color: AppTheme.textSecondary,
+
+                      const SizedBox(height: 12),
+
+                      // Section 1: Account & Orders
+                      _buildSectionHeader('Account & Orders'),
+                      Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        elevation: 2,
+                        shadowColor: Colors.black.withAlpha(10),
+                        child: Column(
+                          children: [
+                            _buildListTile(
+                              Icons.person_outline,
+                              'Account Details',
+                              () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AccountDetailsScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const Divider(height: 1, color: Color(0xFFF0F0F0)),
+                            _buildListTile(
+                              Icons.shopping_bag_outlined,
+                              'My Orders',
+                              () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const MyOrdersScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const Divider(height: 1, color: Color(0xFFF0F0F0)),
+                            _buildListTile(
+                              Icons.location_on_outlined,
+                              'Delivery Addresses',
+                              () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const DeliveryAddressScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       ),
-                      if (userPhone.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          userPhone,
-                          style: GoogleFonts.outfit(
-                            fontSize: 13,
-                            color: AppTheme.textSecondary,
+
+                      const SizedBox(height: 20),
+
+                      // Section 2: Help & Information
+                      _buildSectionHeader('Help & Information'),
+                      Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        elevation: 2,
+                        shadowColor: Colors.black.withAlpha(10),
+                        child: Column(
+                          children: [
+                            _buildListTile(
+                              Icons.help_outline,
+                              'Help & Support',
+                              () {
+                                HelpSupportDialog.show(context);
+                              },
+                            ),
+                            const Divider(height: 1, color: Color(0xFFF0F0F0)),
+                            _buildListTile(Icons.info_outline, 'About Us', () {
+                              AboutUsDialog.show(context, initialIndex: 0);
+                            }),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 26),
+
+                      // Clearly styled Logout button
+                      Center(
+                        child: SizedBox(
+                          width: 200,
+                          height: 40,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              authProvider.logout();
+                              context.read<CartProvider>().clearCart();
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Logged out successfully',
+                                    style: GoogleFonts.outfit(),
+                                  ),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            },
+                            icon: const Icon(
+                              Icons.logout,
+                              color: AppTheme.deleteRed,
+                              size: 20,
+                            ),
+                            label: Text(
+                              'Log Out',
+                              style: GoogleFonts.outfit(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.deleteRed,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(
+                                color: AppTheme.deleteRed,
+                                width: 1.5,
+                              ),
+                              backgroundColor: const Color(0xFFFEF2F2),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(28),
+                              ),
+                            ),
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 2),
-                      // Container(
-                      //   padding: const EdgeInsets.symmetric(
-                      //     horizontal: 12,
-                      //     vertical: 4,
-                      //   ),
-                      //   decoration: BoxDecoration(
-                      //     color: AppTheme.lightGreenBadge,
-                      //     borderRadius: BorderRadius.circular(12),
-                      //   ),
-                      //   child: Row(
-                      //     mainAxisSize: MainAxisSize.min,
-                      //     children: [
-                      //       const Icon(
-                      //         Icons.check_circle,
-                      //         color: AppTheme.primaryGreen,
-                      //         size: 16,
-                      //       ),
-                      //       const SizedBox(width: 6),
-                      //       Text(
-                      //         'Authenticated',
-                      //         style: GoogleFonts.outfit(
-                      //           fontSize: 12,
-                      //           fontWeight: FontWeight.bold,
-                      //           color: AppTheme.darkGreen,
-                      //         ),
-                      //       ),
-                      //     ],
-                      //   ),
-                      // ),
+                      ),
+
+                      const SizedBox(height: 16),
                     ],
                   ),
-                ),
-
-                const SizedBox(height: 12),
-
-                // Section 1: Account & Orders
-                _buildSectionHeader('Account & Orders'),
-                Material(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  elevation: 2,
-                  shadowColor: Colors.black.withAlpha(10),
-                  child: Column(
-                    children: [
-                      _buildListTile(
-                        Icons.person_outline,
-                        'Account Details',
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const AccountDetailsScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      const Divider(height: 1, color: Color(0xFFF0F0F0)),
-                      _buildListTile(
-                        Icons.shopping_bag_outlined,
-                        'My Orders',
-                        () {},
-                      ),
-                      const Divider(height: 1, color: Color(0xFFF0F0F0)),
-                      _buildListTile(
-                        Icons.location_on_outlined,
-                        'Delivery Addresses',
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const DeliveryAddressScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Section 2: Help & Information
-                _buildSectionHeader('Help & Information'),
-                Material(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  elevation: 2,
-                  shadowColor: Colors.black.withAlpha(10),
-                  child: Column(
-                    children: [
-                      _buildListTile(Icons.help_outline, 'Help & Support', () {
-                        HelpSupportDialog.show(context);
-                      }),
-                      const Divider(height: 1, color: Color(0xFFF0F0F0)),
-                      _buildListTile(Icons.info_outline, 'About Us', () {
-                        AboutUsDialog.show(context, initialIndex: 0);
-                      }),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                // Clearly styled Logout button
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      authProvider.logout();
-                      context.read<CartProvider>().clearCart();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Logged out successfully',
-                            style: GoogleFonts.outfit(),
-                          ),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
-                    icon: const Icon(
-                      Icons.logout,
-                      color: AppTheme.deleteRed,
-                      size: 20,
-                    ),
-                    label: Text(
-                      'Log Out',
-                      style: GoogleFonts.outfit(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.deleteRed,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(
-                        color: AppTheme.deleteRed,
-                        width: 1.5,
-                      ),
-                      backgroundColor: const Color(0xFFFEF2F2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-              ],
-            ),
           ),
         ),
       ),

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/cart_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
 import '../widgets/grace_app_bar.dart';
 import '../widgets/grace_drawer.dart';
@@ -11,6 +12,8 @@ import '../widgets/custom_network_image.dart';
 import '../item_details/item_details_screen.dart';
 import '../profile/delivery_address_screen.dart';
 import '../../models/sub_category_item.dart';
+import '../widgets/skeleton_loader.dart';
+import 'order_placed_page.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -20,15 +23,67 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
+  bool _isPlacingOrder = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<CartProvider>(context, listen: false).fetchCartItems();
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      cartProvider.fetchCartItems();
+      cartProvider.fetchCheckoutDetails();
     });
   }
 
+  Future<void> _handlePlaceOrder() async {
+    if (_isPlacingOrder) return;
+
+    setState(() {
+      _isPlacingOrder = true;
+    });
+
+    try {
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      final orderResponse = await cartProvider.placeOrder();
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => OrderPlacedPage(orderData: orderResponse),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final errorMsg = e.toString().replaceAll('Exception: ', '');
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            errorMsg,
+            style: GoogleFonts.outfit(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPlacingOrder = false;
+        });
+      }
+    }
+  }
+
   List<String> _generateCartItemOptions(SubCategoryItem item) {
+    if (item.isOutOfStock) return [];
     final maxStock = item.effectiveStock.clamp(1, 50);
     final List<String> list = [];
 
@@ -36,25 +91,20 @@ class _CartScreenState extends State<CartScreen> {
       for (int i = 1; i <= maxStock; i++) {
         list.add('$i Qty');
       }
-    } else {
-      final int totalQuarters = maxStock * 4;
-      for (int q = 1; q <= totalQuarters; q++) {
-        final double kg = q * 0.25;
-        if (q == 1) {
-          list.add('250g');
-        } else if (q == 2) {
-          list.add('500g');
-        } else if (q == 3) {
-          list.add('750g');
+    } else if (item.isGramType) {
+      if (maxStock >= 0.25) list.add('250 G');
+      if (maxStock >= 0.5) list.add('500 G');
+      for (double kg = 1.0; kg <= maxStock + 0.0001; kg += 0.5) {
+        if (kg % 1 == 0) {
+          list.add('${kg.toInt()} KG');
         } else {
-          if (kg % 1 == 0) {
-            list.add('${kg.toInt()}kg');
-          } else if ((kg * 10) % 1 == 0) {
-            list.add('${kg.toStringAsFixed(1)}kg');
-          } else {
-            list.add('${kg.toStringAsFixed(2)}kg');
-          }
+          list.add('${kg.toStringAsFixed(1)} KG');
         }
+      }
+    } else {
+      final unit = item.displayUnit;
+      for (int i = 1; i <= maxStock; i++) {
+        list.add(unit.isNotEmpty ? '$i $unit' : '$i');
       }
     }
     return list;
@@ -68,11 +118,16 @@ class _CartScreenState extends State<CartScreen> {
       drawer: const GraceDrawer(currentRoute: 'cart'),
       body: Consumer<CartProvider>(
         builder: (context, cartProvider, child) {
+          if (cartProvider.isLoading) {
+            return const CartScreenSkeleton();
+          }
+
           final items = cartProvider.items;
 
           return RefreshIndicator(
             onRefresh: () async {
               await cartProvider.fetchCartItems();
+              await cartProvider.fetchCheckoutDetails();
             },
             color: AppTheme.darkGreen,
             child: SingleChildScrollView(
@@ -159,7 +214,9 @@ class _CartScreenState extends State<CartScreen> {
                                 opt.startsWith('$currentSelected '),
                             orElse: () => options.isNotEmpty
                                 ? options.first
-                                : (item.isQuantityType ? '1 Qty' : '1kg'),
+                                : (item.isQuantityType
+                                    ? '1 Qty'
+                                    : (item.isGramType ? '1 KG' : '1')),
                           );
                         }
 
@@ -744,23 +801,7 @@ class _CartScreenState extends State<CartScreen> {
                       width: double.infinity,
                       height: 52,
                       child: ElevatedButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Order placed successfully!',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              backgroundColor: AppTheme.darkGreen,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
+                        onPressed: _isPlacingOrder ? null : _handlePlaceOrder,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.darkGreen,
                           foregroundColor: Colors.white,
@@ -769,25 +810,34 @@ class _CartScreenState extends State<CartScreen> {
                             borderRadius: BorderRadius.circular(30),
                           ),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Place Order',
-                              style: GoogleFonts.outfit(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                        child: _isPlacingOrder
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'Place Order',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Icon(
+                                    Icons.arrow_forward_rounded,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                ],
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            const Icon(
-                              Icons.arrow_forward_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -897,38 +947,55 @@ class _CartScreenState extends State<CartScreen> {
               ),
             ),
           ] else if (addr != null) ...[
-            if (addr.fullName.isNotEmpty) ...[
-              Text(
-                addr.fullName,
-                style: GoogleFonts.outfit(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textDark,
-                ),
-              ),
-              const SizedBox(height: 4),
-            ],
-            if (addr.formattedAddressLines.isNotEmpty) ...[
-              Text(
-                addr.formattedAddressLines,
-                style: GoogleFonts.outfit(
-                  fontSize: 14,
-                  color: AppTheme.textSecondary,
-                  height: 1.35,
-                ),
-              ),
-            ],
-            if (addr.phoneNumber.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Phone: ${addr.phoneNumber}',
-                style: GoogleFonts.outfit(
-                  fontSize: 13,
-                  color: AppTheme.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
+            Builder(
+              builder: (context) {
+                final user = Provider.of<AuthProvider>(context, listen: false).user;
+                final name = addr.fullName.trim().isNotEmpty
+                    ? addr.fullName.trim()
+                    : (user?.fullName.trim() ?? '');
+                final phone = addr.phoneNumber.trim().isNotEmpty
+                    ? addr.phoneNumber.trim()
+                    : (user?.phoneNumber.trim() ?? '');
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (name.isNotEmpty) ...[
+                      Text(
+                        name,
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    if (addr.formattedAddressLines.isNotEmpty) ...[
+                      Text(
+                        addr.formattedAddressLines,
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          color: AppTheme.textSecondary,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                    if (phone.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Phone: $phone',
+                        style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
           ] else ...[
             Text(
               cartProvider.checkoutError ??

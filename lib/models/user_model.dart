@@ -6,6 +6,7 @@ class UserModel {
   final String email;
   final String phoneNumber;
   final String? profileImage;
+  final String? fcmToken;
 
   UserModel({
     required this.id,
@@ -13,6 +14,7 @@ class UserModel {
     required this.email,
     required this.phoneNumber,
     this.profileImage,
+    this.fcmToken,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -32,6 +34,7 @@ class UserModel {
       phoneNumber:
           json['phone_number'] ?? json['phoneNumber'] ?? json['phone'] ?? '',
       profileImage: formattedImage,
+      fcmToken: json['fcmToken'] ?? json['fcm_token'],
     );
   }
 
@@ -42,6 +45,7 @@ class UserModel {
       'email': email,
       'phone_number': phoneNumber,
       if (profileImage != null) 'profile_image': profileImage,
+      if (fcmToken != null) 'fcm_token': fcmToken,
     };
   }
 }

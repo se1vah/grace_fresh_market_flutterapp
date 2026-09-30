@@ -8,7 +8,7 @@ class SubCategoryItem {
   final String status;
   final dynamic categoryId;
   final String? description;
-  final String categoryType;
+  final String? categoryType;
   final int stock;
   final double offerPercentage;
   final double? originalAmount;
@@ -21,20 +21,48 @@ class SubCategoryItem {
     required this.status,
     this.categoryId,
     this.description,
-    this.categoryType = 'Gram',
+    this.categoryType,
     this.stock = 50,
     this.offerPercentage = 0.0,
     this.originalAmount,
   });
 
-  bool get isQuantityType {
-    final lower = categoryType.trim().toLowerCase();
-    return lower == 'quantity';
+  String? get subCategoryType => categoryType;
+
+  bool get isGramType {
+    if (categoryType == null) return false;
+    final lower = categoryType!.trim().toLowerCase();
+    return lower == 'gram' || lower == 'g';
   }
 
-  bool get isGramType => !isQuantityType;
+  bool get isQuantityType {
+    if (categoryType == null) return false;
+    final lower = categoryType!.trim().toLowerCase();
+    return lower == 'quantity' || lower == 'qty';
+  }
 
-  int get effectiveStock => stock <= 0 ? 50 : stock;
+  String get displayUnit {
+    if (categoryType == null || categoryType!.trim().isEmpty) {
+      return '';
+    }
+    if (isGramType) {
+      return 'KG';
+    }
+    if (isQuantityType) {
+      return 'Qty';
+    }
+    return categoryType!.trim();
+  }
+
+  String get priceUnitSuffix {
+    final unit = displayUnit;
+    if (unit.isEmpty) return '';
+    return ' / $unit';
+  }
+
+  bool get isOutOfStock => stock <= 0;
+
+  int get effectiveStock => stock <= 0 ? 0 : stock;
 
   String get image => images.isNotEmpty ? images.first : '';
 
@@ -112,23 +140,27 @@ class SubCategoryItem {
       }
     }
 
-    final rawType =
-        (json['category_type'] ??
-                json['categoryType'] ??
-                json['category_mode'] ??
-                json['unit_type'] ??
-                json['unitType'] ??
-                json['price_type'] ??
-                json['type'] ??
-                json['unit'] ??
-                (json['category'] is Map
-                    ? json['category']['category_type'] ??
-                          json['category']['categoryType'] ??
-                          json['category']['type']
-                    : null) ??
-                'Gram')
-            .toString()
-            .trim();
+    final rawType = (json['sub_category_type'] ??
+            json['subCategoryType'] ??
+            json['subcategory_type'] ??
+            json['subcategoryType'] ??
+            json['category_type'] ??
+            json['categoryType'] ??
+            json['category_mode'] ??
+            json['unit_type'] ??
+            json['unitType'] ??
+            json['price_type'] ??
+            json['type'] ??
+            json['unit'] ??
+            (json['category'] is Map
+                ? json['category']['sub_category_type'] ??
+                      json['category']['subCategoryType'] ??
+                      json['category']['category_type'] ??
+                      json['category']['categoryType'] ??
+                      json['category']['type']
+                : null))
+        ?.toString()
+        .trim();
 
     final double parsedOffer = parseAmount(
       json['offer_percentage'] ??
