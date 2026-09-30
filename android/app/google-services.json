@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "371559088399",
+    "project_id": "grace-fresh-market-647f0",
+    "storage_bucket": "grace-fresh-market-647f0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:371559088399:android:fed237ba25c7b3bcf37e7a",
+        "android_client_info": {
+          "package_name": "com.gracefresh.market.grace_fresh_market"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDxzka2KVc4Rt00eCqcHjSNJw1QkotsyXU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
