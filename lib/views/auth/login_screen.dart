@@ -10,6 +10,7 @@ import '../widgets/grace_app_bar.dart';
 import '../widgets/grace_bottom_nav_bar.dart';
 import '../widgets/grace_drawer.dart';
 import 'signup_screen.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -95,7 +96,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final authProvider = context.watch<AuthProvider>();
     final isSubmitting = authProvider.isLoading;
 
-    final isInsideMainNav = MainNavigationScreen.isInsideMainNavigation(context);
+    final isInsideMainNav = MainNavigationScreen.isInsideMainNavigation(
+      context,
+    );
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -304,15 +307,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                 onTap: isSubmitting
                                     ? null
                                     : () {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Password reset functionality will be available soon.',
-                                              style: GoogleFonts.outfit(),
-                                            ),
-                                            behavior: SnackBarBehavior.floating,
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                ForgotPasswordScreen(
+                                                  initialEmail:
+                                                      _emailOrPhoneController
+                                                          .text
+                                                          .trim(),
+                                                ),
                                           ),
                                         );
                                       },
@@ -322,7 +325,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     right: 4.0,
                                   ),
                                   child: Text(
-                                    'Forgot?',
+                                    'Forgot Password?',
                                     style: GoogleFonts.outfit(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,

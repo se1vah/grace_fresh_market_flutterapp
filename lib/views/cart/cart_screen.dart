@@ -12,8 +12,10 @@ import '../widgets/custom_network_image.dart';
 import '../item_details/item_details_screen.dart';
 import '../profile/delivery_address_screen.dart';
 import '../../models/sub_category_item.dart';
+import '../../models/cart_item.dart';
 import '../widgets/skeleton_loader.dart';
 import 'order_placed_page.dart';
+import '../no_internet_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -38,12 +40,33 @@ class _CartScreenState extends State<CartScreen> {
   Future<void> _handlePlaceOrder() async {
     if (_isPlacingOrder) return;
 
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+
+    if (cartProvider.checkoutDetails?.deliveryAddress == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please add or select a delivery address before placing your order.',
+            style: GoogleFonts.outfit(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isPlacingOrder = true;
     });
 
     try {
-      final cartProvider = Provider.of<CartProvider>(context, listen: false);
       final orderResponse = await cartProvider.placeOrder();
 
       if (!mounted) return;
@@ -94,6 +117,7 @@ class _CartScreenState extends State<CartScreen> {
     } else if (item.isGramType) {
       if (maxStock >= 0.25) list.add('250 G');
       if (maxStock >= 0.5) list.add('500 G');
+      if (maxStock >= 0.75) list.add('750 G');
       for (double kg = 1.0; kg <= maxStock + 0.0001; kg += 0.5) {
         if (kg % 1 == 0) {
           list.add('${kg.toInt()} KG');
@@ -120,6 +144,16 @@ class _CartScreenState extends State<CartScreen> {
         builder: (context, cartProvider, child) {
           if (cartProvider.isLoading) {
             return const CartScreenSkeleton();
+          }
+
+          if (cartProvider.hasNetworkError && cartProvider.items.isEmpty) {
+            return NoInternetScreen(
+              showBackButton: false,
+              onRetry: () {
+                cartProvider.fetchCartItems();
+                cartProvider.fetchCheckoutDetails();
+              },
+            );
           }
 
           final items = cartProvider.items;
@@ -206,18 +240,11 @@ class _CartScreenState extends State<CartScreen> {
                         final item = cartItem.item;
                         final options = _generateCartItemOptions(item);
 
-                        String currentSelected = cartItem.selectedWeight;
+                        String currentSelected = getOptionForCartItem(cartItem, options);
                         if (!options.contains(currentSelected)) {
-                          currentSelected = options.firstWhere(
-                            (opt) =>
-                                opt == currentSelected ||
-                                opt.startsWith('$currentSelected '),
-                            orElse: () => options.isNotEmpty
-                                ? options.first
-                                : (item.isQuantityType
-                                    ? '1 Qty'
-                                    : (item.isGramType ? '1 KG' : '1')),
-                          );
+                          options.add(currentSelected);
+                          options.sort((a, b) => parseQuantityFromWeight(a, 0)
+                              .compareTo(parseQuantityFromWeight(b, 0)));
                         }
 
                         return Container(
@@ -667,23 +694,107 @@ class _CartScreenState extends State<CartScreen> {
 
                                     const SizedBox(height: 10),
 
-                                    // Dynamic Price Badge
+                                    // Pricing & Offer Details Container
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 12,
-                                        vertical: 6,
+                                        vertical: 8,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFB5ED66),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(
-                                        '₹${cartItem.totalPrice.toStringAsFixed(2)}/$currentSelected',
-                                        style: GoogleFonts.outfit(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppTheme.textDark,
+                                        color: const Color(0xFFF7F8F6),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: AppTheme.darkGreen.withAlpha(30),
+                                          width: 1,
                                         ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          // Unit Price (Original Amount & Final Amount) + Offer % Badge
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Text(
+                                                    '\u20b9${item.unitFinalPrice.toStringAsFixed(2)}',
+                                                    style: GoogleFonts.outfit(
+                                                      fontSize: 14,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: AppTheme.darkGreen,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    item.priceUnitSuffix,
+                                                    style: GoogleFonts.outfit(
+                                                      fontSize: 12,
+                                                      color: AppTheme.textSecondary,
+                                                    ),
+                                                  ),
+                                                  if (cartItem.hasOffer) ...[
+                                                    const SizedBox(width: 8),
+                                                    Text(
+                                                      '\u20b9${item.unitOriginalPrice.toStringAsFixed(2)}',
+                                                      style: GoogleFonts.outfit(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: AppTheme.textSecondary,
+                                                        decoration: TextDecoration.lineThrough,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                              if (cartItem.hasOffer)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFFF5252).withAlpha(25),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: Text(
+                                                    '${item.effectiveOfferPercentage.toStringAsFixed(0)}% OFF',
+                                                    style: GoogleFonts.outfit(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: const Color(0xFFD32F2F),
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          const Divider(height: 1, color: Color(0xFFE0E0E0)),
+                                          const SizedBox(height: 6),
+                                          // Item Total Row
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                'Item Total (${cartItem.selectedWeight})',
+                                                style: GoogleFonts.outfit(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppTheme.textDark,
+                                                ),
+                                              ),
+                                              Text(
+                                                '\u20b9${cartItem.totalPrice.toStringAsFixed(2)}',
+                                                style: GoogleFonts.outfit(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: AppTheme.darkGreen,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
@@ -726,6 +837,62 @@ class _CartScreenState extends State<CartScreen> {
                           const SizedBox(height: 12),
                           const Divider(color: Color(0xFFEEEEEE), height: 1),
                           const SizedBox(height: 16),
+                          if (cartProvider.totalSavings > 0) ...[
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Original Subtotal',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 14,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                                Text(
+                                  '\u20b9${cartProvider.originalSubtotal.toStringAsFixed(2)}',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppTheme.textSecondary,
+                                    decoration: TextDecoration.lineThrough,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.discount_outlined,
+                                      size: 16,
+                                      color: Color(0xFF2E7D32),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Total Offer Savings',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFF2E7D32),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  '-\u20b9${cartProvider.totalSavings.toStringAsFixed(2)}',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFF2E7D32),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                          ],
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -737,7 +904,7 @@ class _CartScreenState extends State<CartScreen> {
                                 ),
                               ),
                               Text(
-                                '₹${cartProvider.subtotal.toStringAsFixed(2)}',
+                                '\u20b9${cartProvider.subtotal.toStringAsFixed(2)}',
                                 style: GoogleFonts.outfit(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
@@ -746,7 +913,7 @@ class _CartScreenState extends State<CartScreen> {
                               ),
                             ],
                           ),
-                          if (cartProvider.deliveryFee > 0) ...[
+                          if (cartProvider.items.isNotEmpty) ...[
                             const SizedBox(height: 12),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -758,14 +925,38 @@ class _CartScreenState extends State<CartScreen> {
                                     color: AppTheme.textDark,
                                   ),
                                 ),
-                                Text(
-                                  '₹${cartProvider.deliveryFee.toStringAsFixed(2)}',
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textDark,
+                                if (cartProvider.isFreeDelivery)
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '\u20b9${cartProvider.baseDeliveryFee.toStringAsFixed(2)}',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: AppTheme.textSecondary,
+                                          decoration: TextDecoration.lineThrough,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'FREE',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: const Color(0xFF2E7D32),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                else
+                                  Text(
+                                    '\u20b9${cartProvider.deliveryFee.toStringAsFixed(2)}',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.textDark,
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
                           ],
@@ -784,7 +975,7 @@ class _CartScreenState extends State<CartScreen> {
                                 ),
                               ),
                               Text(
-                                '₹${cartProvider.grandTotal.toStringAsFixed(2)}',
+                                '\u20b9${cartProvider.grandTotal.toStringAsFixed(2)}',
                                 style: GoogleFonts.outfit(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
@@ -793,6 +984,29 @@ class _CartScreenState extends State<CartScreen> {
                               ),
                             ],
                           ),
+                          if (cartProvider.totalSavings > 0) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F5E9),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'You save \u20b9${cartProvider.totalSavings.toStringAsFixed(2)} on this order!',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF1B5E20),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -934,16 +1148,16 @@ class _CartScreenState extends State<CartScreen> {
           const SizedBox(height: 14),
           if (isLoading) ...[
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12.0),
-              child: Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppTheme.darkGreen,
-                  ),
-                ),
+              padding: EdgeInsets.symmetric(vertical: 6.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SkeletonBox(width: 140, height: 14, borderRadius: 4),
+                  SizedBox(height: 6),
+                  SkeletonBox(width: 200, height: 14, borderRadius: 4),
+                  SizedBox(height: 6),
+                  SkeletonBox(width: 120, height: 14, borderRadius: 4),
+                ],
               ),
             ),
           ] else if (addr != null) ...[
@@ -1058,16 +1272,11 @@ class _CartScreenState extends State<CartScreen> {
           const SizedBox(height: 14),
           if (isLoading) ...[
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12.0),
-              child: Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppTheme.darkGreen,
-                  ),
-                ),
+              padding: EdgeInsets.symmetric(vertical: 6.0),
+              child: SkeletonBox(
+                width: double.infinity,
+                height: 60,
+                borderRadius: 12,
               ),
             ),
           ] else if (selectedMethod != null) ...[

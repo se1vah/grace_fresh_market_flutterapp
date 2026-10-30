@@ -66,7 +66,7 @@ class ApiService {
         throw Exception(msg);
       }
     } catch (e) {
-      if (e is Exception && e.toString().contains('Signup failed')) {
+      if (e is Exception && !e.toString().contains('Unable to connect')) {
         rethrow;
       }
       debugPrint('Signup API Error: $e');
@@ -133,6 +133,120 @@ class ApiService {
     }
   }
 
+  /// Request password reset OTP
+  Future<Map<String, dynamic>> forgotPassword({required String email}) async {
+    final uri = Uri.parse('$userBaseUrl/forgotPassword');
+    final payload = <String, dynamic>{'email': email};
+
+    try {
+      final response = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(payload),
+          )
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+
+      final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+
+      if (response.statusCode == 200) {
+        if (body is Map<String, dynamic>) {
+          return {'statusCode': response.statusCode, ...body};
+        }
+        return {
+          'statusCode': response.statusCode,
+          'message': 'OTP sent successfully',
+        };
+      } else {
+        String msg = 'Failed to send OTP (${response.statusCode}).';
+        if (body is Map<String, dynamic>) {
+          if (body['message'] != null) {
+            msg = body['message'].toString();
+          } else if (body['error'] != null) {
+            msg = body['error'].toString();
+          } else if (body['errors'] != null) {
+            msg = body['errors'].toString();
+          }
+        } else if (response.body.isNotEmpty && response.body.length < 300) {
+          msg = response.body;
+        }
+        return {
+          'statusCode': response.statusCode,
+          'error': msg,
+          'message': msg,
+        };
+      }
+    } catch (e) {
+      debugPrint('ForgotPassword API Error: $e');
+      final errorMsg = e.toString().replaceAll('Exception: ', '');
+      return {'statusCode': 500, 'error': errorMsg, 'message': errorMsg};
+    }
+  }
+
+  /// Confirm forgot password (verification or final reset)
+  Future<Map<String, dynamic>> confirmForgotPassword({
+    required String email,
+    required String confirmationCode,
+    String? newPassword,
+    String? confirmPassword,
+    String? fcmToken,
+  }) async {
+    final uri = Uri.parse('$userBaseUrl/confirmForgotPassword');
+    final payload = <String, dynamic>{
+      'email': email,
+      'confirmationCode': confirmationCode,
+      if (newPassword != null && newPassword.isNotEmpty)
+        'newPassword': newPassword,
+      if (confirmPassword != null && confirmPassword.isNotEmpty)
+        'confirmPassword': confirmPassword,
+      if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
+    };
+
+    try {
+      final response = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(payload),
+          )
+          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+
+      final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+
+      if (response.statusCode == 200) {
+        if (body is Map<String, dynamic>) {
+          return {'statusCode': response.statusCode, ...body};
+        }
+        return {
+          'statusCode': response.statusCode,
+          'message': 'Confirmation successful',
+        };
+      } else {
+        String msg = 'Confirmation failed (${response.statusCode}).';
+        if (body is Map<String, dynamic>) {
+          if (body['message'] != null) {
+            msg = body['message'].toString();
+          } else if (body['error'] != null) {
+            msg = body['error'].toString();
+          } else if (body['errors'] != null) {
+            msg = body['errors'].toString();
+          }
+        } else if (response.body.isNotEmpty && response.body.length < 300) {
+          msg = response.body;
+        }
+        return {
+          'statusCode': response.statusCode,
+          'error': msg,
+          'message': msg,
+        };
+      }
+    } catch (e) {
+      debugPrint('ConfirmForgotPassword API Error: $e');
+      final errorMsg = e.toString().replaceAll('Exception: ', '');
+      return {'statusCode': 500, 'error': errorMsg, 'message': errorMsg};
+    }
+  }
+
   /// Logout user API
   Future<Map<String, dynamic>> logoutUser([String? explicitToken]) async {
     final primaryUri = Uri.parse('$userBaseUrl/logout');
@@ -174,90 +288,255 @@ class ApiService {
     }
   }
 
-  /// Fetch Categories from Backend API
-  Future<List<CategoryModel>> getCategories() async {
-    final uri = Uri.parse('$baseUrl/categories');
-    try {
-      final response = await http
-          .get(uri)
-          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        List<dynamic> list = [];
-        if (decoded is Map<String, dynamic> && decoded.containsKey('data')) {
-          list = decoded['data'] as List<dynamic>;
-        } else if (decoded is List) {
-          list = decoded;
+  /// Fetch Categories from Backend API without omission (retrieves all pages/items)
+  Future<List<CategoryModel>> getCategories({
+    int? limit,
+    int? page,
+    bool fetchAllPages = true,
+  }) async {
+    final List<CategoryModel> allCategories = [];
+    final Set<String> seenIds = {};
+
+    int currentPage = page ?? 1;
+    int totalPages = 1;
+    // Set a large limit per page (1000) so the backend returns the maximum allowed items per page
+    final int requestLimit = limit ?? 1000;
+
+    do {
+      final List<String> queryParams = [
+        'page=$currentPage',
+        'limit=$requestLimit',
+        'pageSize=$requestLimit',
+        'per_page=$requestLimit',
+        'all=true',
+      ];
+
+      final url = '$baseUrl/categories?${queryParams.join('&')}';
+      final uri = Uri.parse(url);
+
+      try {
+        final response = await http
+            .get(uri)
+            .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          List<dynamic> list = [];
+
+          if (decoded is Map<String, dynamic>) {
+            if (decoded.containsKey('data') && decoded['data'] is List) {
+              list = decoded['data'] as List<dynamic>;
+            } else if (decoded.containsKey('categories') &&
+                decoded['categories'] is List) {
+              list = decoded['categories'] as List<dynamic>;
+            } else if (decoded.containsKey('items') &&
+                decoded['items'] is List) {
+              list = decoded['items'] as List<dynamic>;
+            }
+
+            // Extract totalPages from pagination metadata if present
+            if (decoded.containsKey('pagination') &&
+                decoded['pagination'] is Map) {
+              final pagination = decoded['pagination'] as Map;
+              final tPages = pagination['totalPages'] ??
+                  pagination['total_pages'] ??
+                  pagination['last_page'] ??
+                  pagination['pageCount'];
+              if (tPages is num) {
+                totalPages = tPages.toInt();
+              }
+            }
+          } else if (decoded is List) {
+            list = decoded;
+          }
+
+          for (final item in list) {
+            if (item is Map<String, dynamic>) {
+              final cat = CategoryModel.fromJson(item);
+              final idStr = cat.id.toString();
+              if (idStr.isNotEmpty && !seenIds.contains(idStr)) {
+                seenIds.add(idStr);
+                allCategories.add(cat);
+              }
+            }
+          }
+
+          // Stop if fetchAllPages is disabled, list is empty, or reached the last page
+          if (!fetchAllPages || list.isEmpty || currentPage >= totalPages) {
+            break;
+          }
+        } else {
+          // If a subsequent page fails, return whatever categories we gathered so far
+          if (allCategories.isNotEmpty) {
+            break;
+          }
+          throw Exception(
+            'Failed to fetch categories (Server error ${response.statusCode})',
+          );
         }
-        return list.map((item) => CategoryModel.fromJson(item)).toList();
-      } else {
-        throw Exception(
-          'Failed to fetch categories (Server error ${response.statusCode})',
+      } on TimeoutException {
+        if (allCategories.isNotEmpty) {
+          break;
+        }
+        debugPrint(
+          'Categories API fetch timed out after ${EnvConfig.apiTimeoutSeconds}s',
         );
+        throw Exception(
+          'Connection timed out while loading categories. Please try again.',
+        );
+      } catch (e) {
+        if (allCategories.isNotEmpty) {
+          break;
+        }
+        debugPrint('Categories API fetch error: $e');
+        rethrow;
       }
-    } on TimeoutException {
-      debugPrint('Categories API fetch timed out after ${EnvConfig.apiTimeoutSeconds}s');
-      throw Exception('Connection timed out while loading categories. Please try again.');
-    } catch (e) {
-      debugPrint('Categories API fetch error: $e');
-      rethrow;
+
+      currentPage++;
+    } while (currentPage <= totalPages && currentPage <= 50);
+
+    // Fallback: If query-param request returned empty, attempt direct URL without query params
+    if (allCategories.isEmpty) {
+      final plainUri = Uri.parse('$baseUrl/categories');
+      try {
+        final response = await http
+            .get(plainUri)
+            .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          List<dynamic> list = [];
+          if (decoded is Map<String, dynamic> && decoded.containsKey('data')) {
+            list = decoded['data'] as List<dynamic>;
+          } else if (decoded is List) {
+            list = decoded;
+          }
+          return list
+              .whereType<Map<String, dynamic>>()
+              .map((item) => CategoryModel.fromJson(item))
+              .toList();
+        }
+      } catch (_) {}
     }
+
+    return allCategories;
   }
 
-  /// Fetch Sub-Categories from Backend API
+  /// Fetch Sub-Categories from Backend API without pagination omissions
   Future<List<SubCategoryItem>> getSubCategories({
     dynamic categoryId,
     String? search,
     int? limit,
+    int? page,
+    bool fetchAllPages = true,
   }) async {
-    String url = '$baseUrl/sub-categories';
-    List<String> queryParams = [];
+    final List<SubCategoryItem> allSubCategories = [];
+    final Set<String> seenIds = {};
 
-    if (categoryId != null &&
-        categoryId.toString() != 'all' &&
-        categoryId != 0) {
-      queryParams.add('categoryId=$categoryId');
-    }
-    if (search != null && search.trim().isNotEmpty) {
-      queryParams.add('search=${Uri.encodeComponent(search.trim())}');
-    }
-
+    int currentPage = page ?? 1;
+    int totalPages = 1;
     final int effectiveLimit = limit ?? 1000;
-    queryParams.add('limit=$effectiveLimit');
-    queryParams.add('pageSize=$effectiveLimit');
-    queryParams.add('per_page=$effectiveLimit');
-    queryParams.add('all=true');
 
-    if (queryParams.isNotEmpty) {
-      url += '?${queryParams.join('&')}';
-    }
+    do {
+      String url = '$baseUrl/sub-categories';
+      final List<String> queryParams = [];
 
-    final uri = Uri.parse(url);
-    try {
-      final response = await http
-          .get(uri)
-          .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        List<dynamic> list = [];
-        if (decoded is Map<String, dynamic> && decoded.containsKey('data')) {
-          list = decoded['data'] as List<dynamic>;
-        } else if (decoded is List) {
-          list = decoded;
-        }
-        return list.map((item) => SubCategoryItem.fromJson(item)).toList();
-      } else {
-        throw Exception(
-          'Failed to fetch sub-categories (Server error ${response.statusCode})',
-        );
+      if (categoryId != null &&
+          categoryId.toString() != 'all' &&
+          categoryId != 0) {
+        queryParams.add('categoryId=$categoryId');
       }
-    } on TimeoutException {
-      debugPrint('SubCategories API fetch timed out after ${EnvConfig.apiTimeoutSeconds}s');
-      throw Exception('Connection timed out while loading products. Please try again.');
-    } catch (e) {
-      debugPrint('SubCategories API fetch error: $e');
-      rethrow;
-    }
+      if (search != null && search.trim().isNotEmpty) {
+        queryParams.add('search=${Uri.encodeComponent(search.trim())}');
+      }
+
+      queryParams.add('page=$currentPage');
+      queryParams.add('limit=$effectiveLimit');
+      queryParams.add('pageSize=$effectiveLimit');
+      queryParams.add('per_page=$effectiveLimit');
+      queryParams.add('all=true');
+
+      if (queryParams.isNotEmpty) {
+        url += '?${queryParams.join('&')}';
+      }
+
+      final uri = Uri.parse(url);
+      try {
+        final response = await http
+            .get(uri)
+            .timeout(Duration(seconds: EnvConfig.apiTimeoutSeconds));
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          List<dynamic> list = [];
+          if (decoded is Map<String, dynamic>) {
+            if (decoded.containsKey('data') && decoded['data'] is List) {
+              list = decoded['data'] as List<dynamic>;
+            } else if (decoded.containsKey('subcategories') &&
+                decoded['subcategories'] is List) {
+              list = decoded['subcategories'] as List<dynamic>;
+            } else if (decoded.containsKey('items') &&
+                decoded['items'] is List) {
+              list = decoded['items'] as List<dynamic>;
+            }
+
+            if (decoded.containsKey('pagination') &&
+                decoded['pagination'] is Map) {
+              final pagination = decoded['pagination'] as Map;
+              final tPages = pagination['totalPages'] ??
+                  pagination['total_pages'] ??
+                  pagination['last_page'] ??
+                  pagination['pageCount'];
+              if (tPages is num) {
+                totalPages = tPages.toInt();
+              }
+            }
+          } else if (decoded is List) {
+            list = decoded;
+          }
+
+          for (final item in list) {
+            if (item is Map<String, dynamic>) {
+              final subCat = SubCategoryItem.fromJson(item);
+              final idStr = subCat.id.toString();
+              if (idStr.isNotEmpty && !seenIds.contains(idStr)) {
+                seenIds.add(idStr);
+                allSubCategories.add(subCat);
+              }
+            }
+          }
+
+          if (!fetchAllPages || list.isEmpty || currentPage >= totalPages) {
+            break;
+          }
+        } else {
+          if (allSubCategories.isNotEmpty) {
+            break;
+          }
+          throw Exception(
+            'Failed to fetch sub-categories (Server error ${response.statusCode})',
+          );
+        }
+      } on TimeoutException {
+        if (allSubCategories.isNotEmpty) {
+          break;
+        }
+        debugPrint(
+          'SubCategories API fetch timed out after ${EnvConfig.apiTimeoutSeconds}s',
+        );
+        throw Exception(
+          'Connection timed out while loading products. Please try again.',
+        );
+      } catch (e) {
+        if (allSubCategories.isNotEmpty) {
+          break;
+        }
+        debugPrint('SubCategories API fetch error: $e');
+        rethrow;
+      }
+
+      currentPage++;
+    } while (currentPage <= totalPages && currentPage <= 50);
+
+    return allSubCategories;
   }
 
   /// Fetch CMS Content by ID (1: Terms of Service, 2: Privacy Policy)
@@ -322,6 +601,56 @@ class ApiService {
     } catch (e) {
       debugPrint('CMS API fetch error (ID $id): $e');
       rethrow;
+    }
+  }
+
+  /// Checks whether a maintenance notification is active from GET /api/shop/app-setting
+  Future<MaintenanceNotificationInfo> checkMaintenanceNotification({
+    bool rethrowOnError = false,
+  }) async {
+    final uri = Uri.parse(EnvConfig.appSettingUrl);
+    try {
+      final response = await http
+          .get(uri)
+          .timeout(Duration(seconds: EnvConfig.shortTimeoutSeconds));
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        Map<String, dynamic>? data;
+        if (decoded is Map<String, dynamic>) {
+          if (decoded['data'] is Map<String, dynamic>) {
+            data = decoded['data'] as Map<String, dynamic>;
+          } else {
+            data = decoded;
+          }
+        }
+
+        if (data != null) {
+          final title =
+              (data['maintenanceNotificationTitle'] ?? '').toString().trim();
+          final desc =
+              (data['maintenanceNotificationDescription'] ?? '')
+                  .toString()
+                  .trim();
+
+          if (title.isNotEmpty && desc.isNotEmpty) {
+            return MaintenanceNotificationInfo(
+              isUnderMaintenance: true,
+              title: title,
+              description: desc,
+            );
+          }
+        }
+        return const MaintenanceNotificationInfo(isUnderMaintenance: false);
+      } else {
+        throw Exception(
+          'Failed to check maintenance notification (Status ${response.statusCode})',
+        );
+      }
+    } catch (e) {
+      debugPrint('Maintenance notification check error: $e');
+      if (rethrowOnError) rethrow;
+      return const MaintenanceNotificationInfo(isUnderMaintenance: false);
     }
   }
 
@@ -524,11 +853,32 @@ class ApiService {
                         rawJson['selected_weight'] ??
                         rawJson['weight'] ??
                         '')
-                    .toString();
+                    .toString()
+                    .trim();
+
+            if (subCategoryItem.isGramType && weight.isNotEmpty) {
+              final parsedKg = parseQuantityFromWeight(weight, -1);
+              if (parsedKg > 0) {
+                qty = parsedKg;
+              }
+            } else if (subCategoryItem.isQuantityType && qty > 0) {
+              if (weight.isEmpty ||
+                  weight == '1' ||
+                  weight.toLowerCase() == '1kg' ||
+                  weight.toLowerCase() == '1 kg') {
+                weight = formatQuantityToDisplayUnit(
+                  qty,
+                  true,
+                  subCategoryItem.subCategoryType,
+                );
+              }
+            }
 
             if (weight.isEmpty ||
                 (!weight.contains('g') &&
+                    !weight.contains('G') &&
                     !weight.contains('kg') &&
+                    !weight.contains('KG') &&
                     !weight.contains('Qty'))) {
               weight = formatQuantityToDisplayUnit(
                 qty,
@@ -565,7 +915,9 @@ class ApiService {
         throw Exception(msg);
       }
     } on TimeoutException {
-      debugPrint('Cart Get All API timed out after ${EnvConfig.apiTimeoutSeconds}s');
+      debugPrint(
+        'Cart Get All API timed out after ${EnvConfig.apiTimeoutSeconds}s',
+      );
       throw Exception('Connection timed out while fetching cart items.');
     } catch (e) {
       if (e is Exception) rethrow;
@@ -660,7 +1012,11 @@ class ApiService {
 
     final payload = {
       'id': cartId ?? item.id,
+      'cartId': cartId ?? item.id,
       'subcategory_id': item.id,
+      'subcategoryId': item.id,
+      'selectedWeight': weight,
+      'weight': weight,
       'quantity': quantity,
     };
 
@@ -695,8 +1051,6 @@ class ApiService {
       throw Exception('Unable to update cart item.');
     }
   }
-
-
 
   /// Fetch all user addresses from API endpoint: GET http://localhost:3000/api/user/address/get-all
   Future<List<AddressModel>> getUserAddresses() async {
@@ -775,7 +1129,8 @@ class ApiService {
     required String state,
     required String pincode,
     required String addressType,
-    required bool isDefault,
+    bool isDefault = false,
+    String? phoneNumber,
   }) async {
     final uri = Uri.parse(EnvConfig.addressCreateUrl);
 
@@ -816,6 +1171,13 @@ class ApiService {
       'pincode': pincode,
       'addressType': normalizedAddressType,
       'isDefault': isDefault,
+      if (phoneNumber != null && phoneNumber.trim().isNotEmpty) ...{
+        'phoneNumber': phoneNumber.trim(),
+        'phone_number': phoneNumber.trim(),
+      } else ...{
+        'phoneNumber': '',
+        'phone_number': '',
+      },
     };
 
     try {
@@ -977,6 +1339,7 @@ class ApiService {
     required String state,
     required String pincode,
     required String addressType,
+    String? phoneNumber,
   }) async {
     final uri = Uri.parse(EnvConfig.addressUpdateUrl);
 
@@ -1017,6 +1380,13 @@ class ApiService {
       'state': state,
       'pincode': pincode,
       'addressType': normalizedAddressType,
+      if (phoneNumber != null && phoneNumber.trim().isNotEmpty) ...{
+        'phoneNumber': phoneNumber.trim(),
+        'phone_number': phoneNumber.trim(),
+      } else ...{
+        'phoneNumber': '',
+        'phone_number': '',
+      },
     };
 
     try {
@@ -1086,8 +1456,12 @@ class ApiService {
       if (response.statusCode == 200) {
         if (body is Map<String, dynamic>) {
           if (body['success'] == false || body['status'] == false) {
-            final msg = (body['message'] ?? body['error'] ?? '').toString().toLowerCase();
-            if (msg.contains('not found') || msg.contains('deleted') || msg.contains('unauthorized')) {
+            final msg = (body['message'] ?? body['error'] ?? '')
+                .toString()
+                .toLowerCase();
+            if (msg.contains('not found') ||
+                msg.contains('deleted') ||
+                msg.contains('unauthorized')) {
               throw Exception('USER_DELETED_OR_UNAUTHORIZED');
             }
           }
@@ -1459,9 +1833,11 @@ class ApiService {
         Map<String, dynamic>? orderJson;
 
         if (decoded is Map<String, dynamic>) {
-          if (decoded.containsKey('data') && decoded['data'] is Map<String, dynamic>) {
+          if (decoded.containsKey('data') &&
+              decoded['data'] is Map<String, dynamic>) {
             orderJson = decoded['data'] as Map<String, dynamic>;
-          } else if (decoded.containsKey('order') && decoded['order'] is Map<String, dynamic>) {
+          } else if (decoded.containsKey('order') &&
+              decoded['order'] is Map<String, dynamic>) {
             orderJson = decoded['order'] as Map<String, dynamic>;
           } else {
             orderJson = decoded;
@@ -1499,7 +1875,9 @@ class ApiService {
   }
 
   /// Fetch user notifications from API endpoint: GET /api/user/notifications
-  Future<List<NotificationModel>> getUserNotifications([String? explicitToken]) async {
+  Future<List<NotificationModel>> getUserNotifications([
+    String? explicitToken,
+  ]) async {
     final uri = Uri.parse(EnvConfig.notificationsUrl);
 
     final token = (explicitToken != null && explicitToken.isNotEmpty)
@@ -1536,8 +1914,7 @@ class ApiService {
           } else if (decoded.containsKey('notifications') &&
               decoded['notifications'] is List) {
             rawList = decoded['notifications'] as List<dynamic>;
-          } else if (decoded.containsKey('items') &&
-              decoded['items'] is List) {
+          } else if (decoded.containsKey('items') && decoded['items'] is List) {
             rawList = decoded['items'] as List<dynamic>;
           }
         } else if (decoded is List) {
@@ -1650,4 +2027,16 @@ class ApiService {
         return MediaType('image', 'jpeg');
     }
   }
+}
+
+class MaintenanceNotificationInfo {
+  final bool isUnderMaintenance;
+  final String title;
+  final String description;
+
+  const MaintenanceNotificationInfo({
+    required this.isUnderMaintenance,
+    this.title = '',
+    this.description = '',
+  });
 }

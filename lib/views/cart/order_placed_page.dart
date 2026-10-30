@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../models/cart_item.dart';
+import '../../models/order_model.dart';
+import '../../services/invoice_service.dart';
 import '../../theme/app_theme.dart';
 import '../main_navigation_screen.dart';
 import '../profile/my_orders_screen.dart';
@@ -15,294 +16,6 @@ class OrderPlacedPage extends StatelessWidget {
   final String? errorMessage;
 
   const OrderPlacedPage({super.key, this.orderData, this.errorMessage});
-
-  Map<String, dynamic>? _extractOrderInfo(Map<String, dynamic>? raw) {
-    if (raw == null || raw.isEmpty) {
-      return null;
-    }
-
-    // Check if raw is explicitly a failed response
-    if (raw['success'] == false || raw['status'] == false) {
-      return null;
-    }
-
-    // 1. Data root map
-    final dataMap = (raw['data'] is Map<String, dynamic>)
-        ? raw['data'] as Map<String, dynamic>
-        : raw;
-
-    // 2. Order map: response.data.order
-    final orderMap = (dataMap['order'] is Map<String, dynamic>)
-        ? dataMap['order'] as Map<String, dynamic>
-        : (raw['order'] is Map<String, dynamic>
-              ? raw['order'] as Map<String, dynamic>
-              : null);
-
-    final targetOrder =
-        orderMap ??
-        (dataMap.containsKey('orderId') || dataMap.containsKey('id')
-            ? dataMap
-            : null);
-    if (targetOrder == null) {
-      return null;
-    }
-
-    // 3. Order ID: response.data.order.orderId
-    final rawOrderId =
-        targetOrder['orderId'] ??
-        targetOrder['id'] ??
-        targetOrder['order_id'] ??
-        dataMap['orderId'];
-
-    if (rawOrderId == null) {
-      return null;
-    }
-
-    String orderIdStr = rawOrderId.toString().trim();
-    if (!orderIdStr.startsWith('#')) {
-      if (!orderIdStr.toUpperCase().startsWith('GFM-')) {
-        orderIdStr = '#GFM-$orderIdStr';
-      } else {
-        orderIdStr = '#$orderIdStr';
-      }
-    }
-
-    // 4. Delivery Address: response.data.order.address
-    final addressMap = (targetOrder['address'] is Map<String, dynamic>)
-        ? targetOrder['address'] as Map<String, dynamic>
-        : (dataMap['address'] is Map<String, dynamic>
-              ? dataMap['address'] as Map<String, dynamic>
-              : <String, dynamic>{});
-
-    final fullName =
-        (addressMap['fullName'] ??
-                addressMap['full_name'] ??
-                addressMap['name'] ??
-                '')
-            .toString();
-
-    final phoneNumber =
-        (addressMap['phoneNumber'] ??
-                addressMap['phone_number'] ??
-                addressMap['phone'] ??
-                '')
-            .toString();
-
-    final buildingName =
-        (addressMap['buildingName'] ??
-                addressMap['building_name'] ??
-                addressMap['house'] ??
-                '')
-            .toString();
-
-    final streetName =
-        (addressMap['streetName'] ??
-                addressMap['street_name'] ??
-                addressMap['street'] ??
-                '')
-            .toString();
-
-    final city = (addressMap['city'] ?? '').toString();
-    final state = (addressMap['state'] ?? '').toString();
-    final pincode =
-        (addressMap['pincode'] ??
-                addressMap['pinCode'] ??
-                addressMap['zip'] ??
-                '')
-            .toString();
-
-    // 5. Order Summary Items: response.data.items
-    List<dynamic> rawItems = [];
-    if (dataMap['items'] is List) {
-      rawItems = dataMap['items'] as List<dynamic>;
-    } else if (targetOrder['items'] is List) {
-      rawItems = targetOrder['items'] as List<dynamic>;
-    } else if (raw['items'] is List) {
-      rawItems = raw['items'] as List<dynamic>;
-    }
-
-    final parsedItems = rawItems.map<Map<String, dynamic>>((item) {
-      final Map<String, dynamic> map = (item is Map<String, dynamic>)
-          ? item
-          : (item is Map ? Map<String, dynamic>.from(item) : {});
-
-      final subcategoryName =
-          (map['subcategoryName'] ??
-                  map['subcategory_name'] ??
-                  map['name'] ??
-                  map['title'] ??
-                  'Item')
-              .toString();
-
-      String image = '';
-      if (map['subcategoryImage'] is List && (map['subcategoryImage'] as List).isNotEmpty) {
-        image = (map['subcategoryImage'] as List).first.toString();
-      } else if (map['images'] is List && (map['images'] as List).isNotEmpty) {
-        image = (map['images'] as List).first.toString();
-      } else {
-        image = (map['subcategoryImage'] ??
-                map['imageUrl'] ??
-                map['image_url'] ??
-                map['image'] ??
-                map['img'] ??
-                '')
-            .toString();
-      }
-
-      final subCategoryType = (map['sub_category_type'] ??
-              map['subCategoryType'] ??
-              map['subcategory_type'] ??
-              map['subcategoryType'] ??
-              map['category_type'] ??
-              map['categoryType'] ??
-              map['unit'] ??
-              (map['subcategory'] is Map
-                  ? (map['subcategory'] as Map)['sub_category_type'] ??
-                        (map['subcategory'] as Map)['category_type']
-                  : null))
-          ?.toString()
-          .trim();
-
-      final rawQty = map['quantity'] ?? map['qty'] ?? map['selectedWeight'] ?? 1;
-      final numQty = parseQuantityFromWeight(rawQty.toString(), 1);
-
-      final String displayQty = _formatOrderPlacedQuantity(numQty, rawQty.toString(), subCategoryType);
-
-      final priceNum =
-          num.tryParse(
-            (map['price'] ?? map['amount'] ?? map['rate'] ?? 0).toString(),
-          ) ??
-          0.0;
-
-      final itemTotalNum =
-          num.tryParse(
-            (map['itemTotal'] ??
-                    map['item_total'] ??
-                    map['total'] ??
-                    (priceNum * numQty))
-                .toString(),
-          ) ??
-          (priceNum * numQty);
-
-      return {
-        'subcategoryName': subcategoryName,
-        'image': image,
-        'quantity': displayQty,
-        'price': priceNum,
-        'itemTotal': itemTotalNum,
-      };
-    }).toList();
-
-    // 6. Subtotal: response.data.order.subTotal
-    final subTotal =
-        num.tryParse(
-          (targetOrder['subTotal'] ??
-                  targetOrder['sub_total'] ??
-                  dataMap['subTotal'] ??
-                  0)
-              .toString(),
-        ) ??
-        0.0;
-
-    // 7. Delivery Fee: response.data.order.deliveryFee
-    final deliveryFee =
-        num.tryParse(
-          (targetOrder['deliveryFee'] ??
-                  targetOrder['delivery_fee'] ??
-                  dataMap['deliveryFee'] ??
-                  0)
-              .toString(),
-        ) ??
-        0.0;
-
-    // 8. Total: response.data.order.total
-    final total =
-        num.tryParse(
-          (targetOrder['total'] ??
-                  targetOrder['grandTotal'] ??
-                  dataMap['total'] ??
-                  0)
-              .toString(),
-        ) ??
-        (subTotal + deliveryFee);
-
-    // 9. Payment Method: response.data.order.paymentMethod.paymentType
-    String paymentType = 'Cash on Delivery';
-    if (targetOrder['paymentMethod'] is Map<String, dynamic>) {
-      final pm = targetOrder['paymentMethod'] as Map<String, dynamic>;
-      paymentType =
-          (pm['paymentType'] ??
-                  pm['type'] ??
-                  pm['method'] ??
-                  'Cash on Delivery')
-              .toString();
-    } else if (targetOrder['paymentMethod'] is String &&
-        (targetOrder['paymentMethod'] as String).isNotEmpty) {
-      paymentType = targetOrder['paymentMethod'] as String;
-    } else if (dataMap['paymentMethod'] is Map<String, dynamic>) {
-      final pm = dataMap['paymentMethod'] as Map<String, dynamic>;
-      paymentType = (pm['paymentType'] ?? pm['type'] ?? 'Cash on Delivery')
-          .toString();
-    } else if (dataMap['paymentMethod'] is String &&
-        (dataMap['paymentMethod'] as String).isNotEmpty) {
-      paymentType = dataMap['paymentMethod'] as String;
-    }
-
-    return {
-      'orderId': orderIdStr,
-      'fullName': fullName,
-      'phoneNumber': phoneNumber,
-      'buildingName': buildingName,
-      'streetName': streetName,
-      'city': city,
-      'state': state,
-      'pincode': pincode,
-      'items': parsedItems,
-      'subTotal': subTotal,
-      'deliveryFee': deliveryFee,
-      'total': total,
-      'paymentType': paymentType,
-    };
-  }
-
-  static String _formatOrderPlacedQuantity(num numQty, String rawQtyStr, String? subCategoryType) {
-    final trimmed = rawQtyStr.trim();
-    if (trimmed.endsWith('G') || trimmed.endsWith('g') || trimmed.endsWith('KG') || trimmed.endsWith('kg') || trimmed.contains('Qty')) {
-      if (trimmed.endsWith('g') && !trimmed.endsWith('kg')) {
-        final val = trimmed.replaceAll(RegExp(r'[^0-9.]'), '').trim();
-        if (val.isNotEmpty) return '$val G';
-      }
-      if (trimmed.endsWith('kg') || trimmed.endsWith('KG')) {
-        final val = trimmed.replaceAll(RegExp(r'[^0-9.]'), '').trim();
-        if (val.isNotEmpty) return '$val KG';
-      }
-      return trimmed;
-    }
-
-    final lowerType = subCategoryType?.toLowerCase().trim();
-    final isGram = lowerType == 'gram' || lowerType == 'g';
-    final isQuantity = lowerType == 'quantity' || lowerType == 'qty';
-
-    if (isGram || subCategoryType == null || subCategoryType.isEmpty) {
-      if ((numQty - 0.25).abs() < 0.0001) return '250 G';
-      if ((numQty - 0.5).abs() < 0.0001) return '500 G';
-      if ((numQty - 0.75).abs() < 0.0001) return '750 G';
-      if (numQty < 1.0) {
-        final grams = (numQty * 1000).round();
-        return '$grams G';
-      }
-      final kgStr = numQty % 1 == 0 ? numQty.toInt().toString() : numQty.toString();
-      return '$kgStr KG';
-    }
-
-    if (isQuantity) {
-      final qtyStr = numQty % 1 == 0 ? numQty.toInt().toString() : numQty.toString();
-      return '$qtyStr Qty';
-    }
-
-    final qtyStr = numQty % 1 == 0 ? numQty.toInt().toString() : numQty.toString();
-    return '$qtyStr $subCategoryType';
-  }
 
   String _extractErrorMessage() {
     if (errorMessage != null && errorMessage!.trim().isNotEmpty) {
@@ -327,23 +40,74 @@ class OrderPlacedPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final info = _extractOrderInfo(orderData);
-
-    // If order info is invalid or failed, display the Error Message View
-    if (info == null) {
+    if (orderData == null ||
+        orderData!['success'] == false ||
+        orderData!['status'] == false) {
       return _buildErrorView(context, _extractErrorMessage());
     }
 
-    final items = info['items'] as List<Map<String, dynamic>>;
+    final order = OrderModel.fromJson(orderData!);
+    if (order.id == null || (order.id == 0 && order.items.isEmpty)) {
+      return _buildErrorView(context, _extractErrorMessage());
+    }
 
-    // Address formatting lines
-    final fullName = info['fullName'] as String;
-    final phoneNumber = info['phoneNumber'] as String;
-    final buildingName = info['buildingName'] as String;
-    final streetName = info['streetName'] as String;
-    final city = info['city'] as String;
-    final state = info['state'] as String;
-    final pincode = info['pincode'] as String;
+    String rawId = order.id.toString().trim();
+    String displayOrderId = rawId;
+    if (!displayOrderId.startsWith('#')) {
+      if (!displayOrderId.toUpperCase().startsWith('GFM-')) {
+        displayOrderId = '#GFM-$displayOrderId';
+      } else {
+        displayOrderId = '#$displayOrderId';
+      }
+    }
+
+    // Address formatting
+    final addr = order.address;
+    String getNonEmpty(List<dynamic> options) {
+      for (var opt in options) {
+        if (opt != null && opt.toString().trim().isNotEmpty) {
+          return opt.toString().trim();
+        }
+      }
+      return '';
+    }
+
+    final fullName = getNonEmpty([
+      addr?['fullName'],
+      addr?['full_name'],
+      addr?['name'],
+      addr?['receiverName'],
+      addr?['userName'],
+    ]);
+
+    final buildingName = getNonEmpty([
+      addr?['buildingName'],
+      addr?['building_name'],
+      addr?['addressLine1'],
+      addr?['street'],
+      addr?['house'],
+    ]);
+
+    final streetName = getNonEmpty([
+      addr?['streetName'],
+      addr?['street_name'],
+      addr?['addressLine2'],
+    ]);
+
+    final city = getNonEmpty([addr?['city']]);
+    final state = getNonEmpty([addr?['state']]);
+    final pincode = getNonEmpty([
+      addr?['pincode'],
+      addr?['pinCode'],
+      addr?['zip'],
+    ]);
+
+    final phoneNumber = getNonEmpty([
+      addr?['phoneNumber'],
+      addr?['phone_number'],
+      addr?['phone'],
+      addr?['mobile'],
+    ]);
 
     String addressLine1 = '';
     if (buildingName.isNotEmpty && streetName.isNotEmpty) {
@@ -360,6 +124,30 @@ class OrderPlacedPage extends StatelessWidget {
     if (state.isNotEmpty) cityParts.add(state);
     if (pincode.isNotEmpty) cityParts.add(pincode);
     addressLine2 = cityParts.join(', ');
+
+    // Payment Method
+    final rawPayment =
+        (order.paymentMethod?['name'] ??
+                order.paymentMethod?['type'] ??
+                order.paymentMethod?['paymentType'] ??
+                'COD')
+            .toString();
+
+    final paymentTitle =
+        rawPayment.toLowerCase().contains('cod') ||
+            rawPayment.toLowerCase().contains('cash')
+        ? 'Cash on Delivery (COD)'
+        : rawPayment;
+
+    // Summary calculations
+    final items = order.items;
+    final origSub = order.calculatedOriginalSubTotal;
+    final offerSav = order.calculatedTotalSavings;
+    final subTotal = order.calculatedSubTotal;
+    final isFreeDel = order.isFreeDelivery;
+    final baseDel = order.baseDeliveryFee;
+    final deliveryFee = order.deliveryFee;
+    final grandTotal = order.effectiveAmount;
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -413,7 +201,7 @@ class OrderPlacedPage extends StatelessWidget {
                     text: 'Thank you for choosing Grace Fresh Market.\nYour order ',
                   ),
                   TextSpan(
-                    text: info['orderId'].toString(),
+                    text: displayOrderId,
                     style: GoogleFonts.outfit(
                       fontWeight: FontWeight.bold,
                       color: AppTheme.darkGreen,
@@ -425,7 +213,7 @@ class OrderPlacedPage extends StatelessWidget {
             ),
             const SizedBox(height: 24),
 
-            // Order Details Card
+            // 1. Delivery Address Card
             Container(
               width: double.infinity,
               decoration: BoxDecoration(
@@ -443,7 +231,6 @@ class OrderPlacedPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Delivery Address Header
                   Row(
                     children: [
                       const Icon(
@@ -463,8 +250,6 @@ class OrderPlacedPage extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 10),
-
-                  // Delivery Address Lines
                   Padding(
                     padding: const EdgeInsets.only(left: 30),
                     child: Column(
@@ -514,13 +299,143 @@ class OrderPlacedPage extends StatelessWidget {
                       ],
                     ),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
 
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Divider(color: Color(0xFFEEEEEE), height: 1),
+            // 2. Payment Method Card (Matching OrderDetailsCard)
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(10),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
                   ),
+                ],
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.payments_outlined,
+                        color: AppTheme.darkGreen,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Payment Method',
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF7FAF5),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppTheme.darkGreen.withAlpha(180),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.radio_button_checked,
+                              color: AppTheme.darkGreen,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 10),
+                            const Icon(
+                              Icons.local_shipping_outlined,
+                              color: AppTheme.darkGreen,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                paymentTitle,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.textDark,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFB5ED66),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Selected',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.darkGreen,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 32),
+                          child: Text(
+                            'Pay when your fresh produce arrives at your door. We accept exact cash or card via our driver\'s terminal.',
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              color: AppTheme.textSecondary,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
 
-                  // Order Summary Header
+            // 3. Order Summary Card
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(10),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Row(
                     children: [
                       const Icon(
@@ -532,7 +447,7 @@ class OrderPlacedPage extends StatelessWidget {
                       Text(
                         'Order Summary',
                         style: GoogleFonts.outfit(
-                          fontSize: 16,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: AppTheme.textDark,
                         ),
@@ -541,34 +456,42 @@ class OrderPlacedPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
 
-                  // Items List
+                  // Products List in Order Summary
                   ListView.separated(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: items.length,
                     separatorBuilder: (context, index) =>
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
                     itemBuilder: (context, index) {
                       final item = items[index];
-                      final name =
-                          item['subcategoryName']?.toString() ?? 'Item';
-                      final qty = item['quantity']?.toString() ?? '1';
-                      final itemTotal =
-                          (item['itemTotal'] as num?)?.toDouble() ?? 0.0;
-                      final imgUrl = item['image']?.toString() ?? '';
+                      final imageUrl = item.images.isNotEmpty
+                          ? item.images.first
+                          : '';
+                      final name = item.subcategoryName ?? 'Item';
+                      final qtyDisplay = item.formattedQuantityDisplay;
+                      final unitPrice =
+                          item.subcategoryAmount ??
+                          (item.itemTotal /
+                              (item.quantity > 0 ? item.quantity : 1));
+                      final itemTotal = item.itemTotal;
+                      final totalOrig = item.totalOriginalAmount;
+                      final totalOffer = item.totalOfferAmount;
+                      final hasOffer = item.hasOffer;
 
                       return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: 48,
-                            height: 48,
+                            width: 52,
+                            height: 52,
                             decoration: BoxDecoration(
                               color: const Color(0xFFF4F6F3),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             clipBehavior: Clip.antiAlias,
                             child: CustomNetworkImage(
-                              imageUrl: imgUrl,
+                              imageUrl: imageUrl,
                               itemName: name,
                               fit: BoxFit.cover,
                             ),
@@ -581,31 +504,95 @@ class OrderPlacedPage extends StatelessWidget {
                                 Text(
                                   name,
                                   style: GoogleFonts.outfit(
-                                    fontSize: 14,
+                                    fontSize: 15,
                                     fontWeight: FontWeight.w600,
                                     color: AppTheme.textDark,
                                   ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  qty,
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 13,
-                                    color: AppTheme.textSecondary,
-                                  ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.lightGreenBadge,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        qtyDisplay,
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppTheme.darkGreen,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Price: \u20b9${unitPrice.toStringAsFixed(2)}',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                  ],
                                 ),
+                                if (hasOffer && totalOffer > 0) ...[
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '\u20b9${totalOrig.toStringAsFixed(2)}',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: const Color(0xFF9CA3AF),
+                                          decoration:
+                                              TextDecoration.lineThrough,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Offer Savings: -\u20b9${totalOffer.toStringAsFixed(2)}',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: const Color(0xFF2E7D32),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ],
                             ),
                           ),
-                          Text(
-                            '₹${itemTotal.toStringAsFixed(2)}',
-                            style: GoogleFonts.outfit(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: AppTheme.textDark,
-                            ),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                'Actual Amount',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 10,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '\u20b9${itemTotal.toStringAsFixed(2)}',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.darkGreen,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       );
@@ -617,20 +604,77 @@ class OrderPlacedPage extends StatelessWidget {
                     child: Divider(color: Color(0xFFEEEEEE), height: 1),
                   ),
 
-                  // Payment Method Row
+                  // Order Calculations
+                  if (offerSav > 0) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Original Subtotal',
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                        Text(
+                          '\u20b9${origSub.toStringAsFixed(2)}',
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.textSecondary,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.discount_outlined,
+                              size: 16,
+                              color: Color(0xFF2E7D32),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Total Offer Savings',
+                              style: GoogleFonts.outfit(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF2E7D32),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          '-\u20b9${offerSav.toStringAsFixed(2)}',
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF2E7D32),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Payment Method:',
+                        'Subtotal (${items.length} items)',
                         style: GoogleFonts.outfit(
                           fontSize: 14,
-                          color: AppTheme.textSecondary,
                           fontWeight: FontWeight.w500,
+                          color: AppTheme.textDark,
                         ),
                       ),
                       Text(
-                        info['paymentType'].toString(),
+                        '\u20b9${subTotal.toStringAsFixed(2)}',
                         style: GoogleFonts.outfit(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -639,8 +683,57 @@ class OrderPlacedPage extends StatelessWidget {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Delivery Fee',
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      if (isFreeDel)
+                        Row(
+                          children: [
+                            Text(
+                              '\u20b9${baseDel.toStringAsFixed(2)}',
+                              style: GoogleFonts.outfit(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF9CA3AF),
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'FREE',
+                              style: GoogleFonts.outfit(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF2E7D32),
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Text(
+                          '\u20b9${deliveryFee.toStringAsFixed(2)}',
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textDark,
+                          ),
+                        ),
+                    ],
+                  ),
 
-                  const SizedBox(height: 16),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Divider(color: Color(0xFFEEEEEE), height: 1),
+                  ),
 
                   // Total Row
                   Row(
@@ -655,7 +748,7 @@ class OrderPlacedPage extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '₹${(info['total'] as num).toStringAsFixed(2)}',
+                        '\u20b9${grandTotal.toStringAsFixed(2)}',
                         style: GoogleFonts.outfit(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -664,10 +757,68 @@ class OrderPlacedPage extends StatelessWidget {
                       ),
                     ],
                   ),
+
+                  // Green Highlight Savings Banner
+                  if (offerSav > 0) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        'You save \u20b9${offerSav.toStringAsFixed(2)} on this order!',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF1B5E20),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 28),
+
+            // Download Invoice Button
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  InvoiceService.downloadInvoice(
+                    context: context,
+                    order: order,
+                  );
+                },
+                icon: const Icon(
+                  Icons.picture_as_pdf_outlined,
+                  color: AppTheme.darkGreen,
+                ),
+                label: Text(
+                  'Download Invoice',
+                  style: GoogleFonts.outfit(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.darkGreen,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppTheme.darkGreen, width: 1.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
 
             // Action Buttons
             SizedBox(
@@ -677,7 +828,8 @@ class OrderPlacedPage extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).pushAndRemoveUntil(
                     MaterialPageRoute(
-                      builder: (context) => const MainNavigationScreen(initialIndex: 3),
+                      builder: (context) =>
+                          const MainNavigationScreen(initialIndex: 3),
                     ),
                     (route) => false,
                   );

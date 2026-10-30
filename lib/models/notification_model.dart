@@ -27,7 +27,13 @@ class NotificationModel {
       if (rawDate is DateTime) {
         parsedDate = rawDate;
       } else if (rawDate is String) {
-        parsedDate = DateTime.tryParse(rawDate);
+        String cleanDate = rawDate.trim();
+        if (cleanDate.endsWith('Z') || cleanDate.endsWith('z')) {
+          cleanDate = cleanDate.substring(0, cleanDate.length - 1);
+        }
+        cleanDate = cleanDate.replaceAll(RegExp(r'[+-]00:?00$'), '');
+        parsedDate =
+            DateTime.tryParse(cleanDate) ?? DateTime.tryParse(rawDate);
       } else if (rawDate is int) {
         parsedDate = DateTime.fromMillisecondsSinceEpoch(rawDate);
       }

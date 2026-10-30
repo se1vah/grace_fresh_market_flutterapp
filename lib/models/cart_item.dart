@@ -2,19 +2,21 @@ import 'sub_category_item.dart';
 
 num parseQuantityFromWeight(String weight, [num defaultQty = 1]) {
   final str = weight.toLowerCase().trim();
+  if (str.isEmpty) return defaultQty;
   if (str == '250g' || str == '250 g') return 0.25;
   if (str == '500g' || str == '500 g') return 0.5;
   if (str == '750g' || str == '750 g') return 0.75;
-  if (str.endsWith('g') && !str.endsWith('kg')) {
-    final valStr = str.replaceAll('g', '').trim();
-    final grams = double.tryParse(valStr);
+  if ((str.contains('g') || str.contains('gm') || str.contains('gram')) &&
+      !str.contains('kg')) {
+    final cleanGramsStr = str.replaceAll(RegExp(r'[^\d.]'), '').trim();
+    final grams = double.tryParse(cleanGramsStr);
     if (grams != null && grams > 0) {
-      return grams / 1000;
+      return grams >= 50 ? grams / 1000 : grams;
     }
   }
-  if (str.endsWith('kg')) {
-    final valStr = str.replaceAll('kg', '').trim();
-    final kg = double.tryParse(valStr);
+  if (str.contains('kg')) {
+    final cleanKgStr = str.replaceAll(RegExp(r'[^\d.]'), '').trim();
+    final kg = double.tryParse(cleanKgStr);
     if (kg != null && kg > 0) {
       return kg;
     }
@@ -29,13 +31,22 @@ num parseQuantityFromWeight(String weight, [num defaultQty = 1]) {
   return defaultQty;
 }
 
-String formatQuantityToDisplayUnit(num qty, bool isQuantityType, [String? subCategoryType]) {
+String formatQuantityToDisplayUnit(
+  num qty,
+  bool isQuantityType, [
+  String? subCategoryType,
+]) {
   if (isQuantityType) {
     return '${qty % 1 == 0 ? qty.toInt() : qty} Qty';
   }
   if (subCategoryType != null && subCategoryType.trim().isNotEmpty) {
     final lower = subCategoryType.trim().toLowerCase();
-    if (lower != 'gram' && lower != 'g' && lower != 'quantity' && lower != 'qty') {
+    if (lower != 'gram' &&
+        lower != 'g' &&
+        lower != 'quantity' &&
+        lower != 'qty' &&
+        lower != 'kg' &&
+        lower != 'kilogram') {
       final qtyStr = qty % 1 == 0 ? qty.toInt().toString() : qty.toString();
       return '$qtyStr ${subCategoryType.trim()}';
     }
@@ -73,16 +84,42 @@ String formatQuantityToOption(
 
 String getOptionForCartItem(CartItem cartItem, List<String> availableOptions) {
   final rawWeight = cartItem.selectedWeight.trim();
+
+  // 1. Direct exact match
   if (availableOptions.contains(rawWeight)) {
     return rawWeight;
   }
 
+  // 2. Case-insensitive & whitespace-insensitive match (e.g. '500g' matches '500 G')
+  final normRaw = rawWeight.toLowerCase().replaceAll(' ', '');
   for (final opt in availableOptions) {
-    if (opt.toLowerCase().trim() == rawWeight.toLowerCase().trim()) {
+    if (opt.toLowerCase().replaceAll(' ', '') == normRaw) {
       return opt;
     }
   }
 
+  // 3. Match by parsed weight from rawWeight string
+  final weightQty = parseQuantityFromWeight(rawWeight, -1);
+  if (weightQty > 0) {
+    for (final opt in availableOptions) {
+      final optQty = parseQuantityFromWeight(opt, -1);
+      if ((optQty - weightQty).abs() < 0.0001) {
+        return opt;
+      }
+    }
+  }
+
+  // 4. Match by cartItem.quantity
+  if (cartItem.quantity > 0) {
+    for (final opt in availableOptions) {
+      final optQty = parseQuantityFromWeight(opt, -1);
+      if ((optQty - cartItem.quantity).abs() < 0.0001) {
+        return opt;
+      }
+    }
+  }
+
+  // 5. Fallback formatting
   return formatQuantityToOption(
     cartItem.quantity,
     cartItem.item.isQuantityType,
@@ -97,26 +134,47 @@ class CartItem {
   String selectedWeight;
   num quantity;
 
-  CartItem({
-    this.id,
-    required this.item,
-    String? selectedWeight,
-    num? quantity,
-  })  : quantity =
-            quantity ?? parseQuantityFromWeight(selectedWeight ?? '1KG', 1),
-        selectedWeight = (selectedWeight != null &&
-                (selectedWeight.contains('g') ||
-                    selectedWeight.contains('kg') ||
-                    selectedWeight.contains('KG') ||
-                    selectedWeight.contains('Qty')))
-            ? selectedWeight
-            : formatQuantityToDisplayUnit(
-                quantity ?? parseQuantityFromWeight(selectedWeight ?? '1KG', 1),
-                item.isQuantityType,
-                item.subCategoryType,
-              );
+  CartItem({this.id, required this.item, String? selectedWeight, num? quantity})
+    : quantity =
+          (item.isGramType &&
+              selectedWeight != null &&
+              selectedWeight.trim().isNotEmpty &&
+              parseQuantityFromWeight(selectedWeight, -1) > 0)
+          ? parseQuantityFromWeight(selectedWeight, -1)
+          : (quantity ?? parseQuantityFromWeight(selectedWeight ?? '1KG', 1)),
+      selectedWeight =
+          (selectedWeight != null &&
+              selectedWeight.trim().isNotEmpty &&
+              (selectedWeight.contains('g') ||
+                  selectedWeight.contains('G') ||
+                  selectedWeight.contains('kg') ||
+                  selectedWeight.contains('KG') ||
+                  selectedWeight.contains('Qty')))
+          ? selectedWeight.trim()
+          : formatQuantityToDisplayUnit(
+              (item.isGramType &&
+                      selectedWeight != null &&
+                      selectedWeight.trim().isNotEmpty &&
+                      parseQuantityFromWeight(selectedWeight, -1) > 0)
+                  ? parseQuantityFromWeight(selectedWeight, -1)
+                  : (quantity ??
+                      parseQuantityFromWeight(selectedWeight ?? '1KG', 1)),
+              item.isQuantityType,
+              item.subCategoryType,
+            );
 
   double get weightMultiplier => quantity.toDouble();
+
+  bool get hasOffer => item.hasOffer;
+
+  double get unitOriginalPrice => item.unitOriginalPrice;
+
+  double get unitFinalPrice => item.unitFinalPrice;
+
+  double get totalOriginalPrice => item.unitOriginalPrice * quantity;
+
+  double get totalSavings =>
+      (item.unitOriginalPrice - item.unitFinalPrice) * quantity;
 
   double get totalPrice {
     return item.unitFinalPrice * quantity;

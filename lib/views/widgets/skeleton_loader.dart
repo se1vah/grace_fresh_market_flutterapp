@@ -218,13 +218,19 @@ class CartScreenSkeleton extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Skeleton
-          const SkeletonBox(width: 140, height: 26, borderRadius: 6),
+          // Header Skeleton (Your Cart + X items)
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              SkeletonBox(width: 130, height: 26, borderRadius: 6),
+              SkeletonBox(width: 60, height: 18, borderRadius: 4),
+            ],
+          ),
           const SizedBox(height: 20),
 
-          // Cart Items Skeleton Cards
+          // Cart Items Skeleton Cards (Matching actual CartScreen card structure)
           ...List.generate(
-            3,
+            2,
             (_) => Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: Container(
@@ -232,54 +238,206 @@ class CartScreenSkeleton extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(6),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                child: const Row(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SkeletonBox(width: 64, height: 64, borderRadius: 12),
-                    SizedBox(width: 14),
+                    // Item image (80x80)
+                    const SkeletonBox(width: 80, height: 80, borderRadius: 12),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SkeletonBox(width: 120, height: 16, borderRadius: 4),
-                          SizedBox(height: 8),
-                          SkeletonBox(width: 70, height: 14, borderRadius: 4),
+                          // Title & Delete icon row
+                          const Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              SkeletonBox(width: 140, height: 18, borderRadius: 4),
+                              SkeletonBox(width: 22, height: 22, shape: BoxShape.circle),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+
+                          // Category label row
+                          const SkeletonBox(width: 110, height: 14, borderRadius: 4),
+                          const SizedBox(height: 8),
+
+                          // Quick Selection Chips Row
+                          const Row(
+                            children: [
+                              SkeletonBox(width: 55, height: 28, borderRadius: 16),
+                              SizedBox(width: 6),
+                              SkeletonBox(width: 55, height: 28, borderRadius: 16),
+                              SizedBox(width: 6),
+                              SkeletonBox(width: 55, height: 28, borderRadius: 16),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+
+                          // Dropdown Selector Box
+                          const SkeletonBox(
+                            width: double.infinity,
+                            height: 42,
+                            borderRadius: 12,
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Pricing Container
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF7F8F6),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    SkeletonBox(width: 70, height: 14, borderRadius: 4),
+                                    SkeletonBox(width: 50, height: 14, borderRadius: 4),
+                                  ],
+                                ),
+                                SizedBox(height: 8),
+                                Divider(height: 1, color: Color(0xFFE0E0E0)),
+                                SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    SkeletonBox(width: 90, height: 14, borderRadius: 4),
+                                    SkeletonBox(width: 65, height: 16, borderRadius: 4),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    SkeletonBox(width: 60, height: 32, borderRadius: 20),
                   ],
                 ),
               ),
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+
+          // Delivery Address Card Skeleton
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(6),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        SkeletonBox(width: 22, height: 22, shape: BoxShape.circle),
+                        SizedBox(width: 8),
+                        SkeletonBox(width: 130, height: 18, borderRadius: 4),
+                      ],
+                    ),
+                    SkeletonBox(width: 50, height: 26, borderRadius: 20),
+                  ],
+                ),
+                SizedBox(height: 14),
+                SkeletonBox(width: 140, height: 14, borderRadius: 4),
+                SizedBox(height: 6),
+                SkeletonBox(width: 200, height: 14, borderRadius: 4),
+                SizedBox(height: 6),
+                SkeletonBox(width: 120, height: 14, borderRadius: 4),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Payment Method Card Skeleton
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(6),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    SkeletonBox(width: 22, height: 22, shape: BoxShape.circle),
+                    SizedBox(width: 8),
+                    SkeletonBox(width: 140, height: 18, borderRadius: 4),
+                  ],
+                ),
+                SizedBox(height: 14),
+                SkeletonBox(width: double.infinity, height: 60, borderRadius: 12),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
           // Order Summary Skeleton Container
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(6),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SkeletonBox(width: 130, height: 20, borderRadius: 4),
+                SkeletonBox(width: 140, height: 20, borderRadius: 4),
+                SizedBox(height: 12),
+                Divider(color: Color(0xFFEEEEEE), height: 1),
                 SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    SkeletonBox(width: 80, height: 14, borderRadius: 4),
-                    SkeletonBox(width: 60, height: 14, borderRadius: 4),
+                    SkeletonBox(width: 120, height: 15, borderRadius: 4),
+                    SkeletonBox(width: 60, height: 15, borderRadius: 4),
                   ],
                 ),
-                SizedBox(height: 10),
+                SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    SkeletonBox(width: 90, height: 14, borderRadius: 4),
-                    SkeletonBox(width: 50, height: 14, borderRadius: 4),
+                    SkeletonBox(width: 90, height: 15, borderRadius: 4),
+                    SkeletonBox(width: 50, height: 15, borderRadius: 4),
                   ],
                 ),
                 SizedBox(height: 16),
@@ -289,12 +447,22 @@ class CartScreenSkeleton extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     SkeletonBox(width: 60, height: 20, borderRadius: 4),
-                    SkeletonBox(width: 80, height: 24, borderRadius: 4),
+                    SkeletonBox(width: 90, height: 24, borderRadius: 4),
                   ],
                 ),
               ],
             ),
           ),
+
+          const SizedBox(height: 24),
+
+          // Place Order Button Skeleton
+          const SkeletonBox(
+            width: double.infinity,
+            height: 52,
+            borderRadius: 30,
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );

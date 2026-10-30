@@ -20,7 +20,7 @@ class CustomNetworkImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final cleanUrl = imageUrl.trim();
 
-    if (cleanUrl.isEmpty) {
+    if (cleanUrl.isEmpty || cleanUrl == 'null' || cleanUrl == 'undefined') {
       return _buildBlankPlaceholder();
     }
 
@@ -34,7 +34,7 @@ class CustomNetworkImage extends StatelessWidget {
       loadingBuilder: (context, child, loadingProgress) {
         if (loadingProgress == null) return child;
         return Container(
-          color: const Color(0xFFF7F8F6),
+          color: const Color(0xFFF4F6F3),
         );
       },
       errorBuilder: (context, error, stackTrace) {
@@ -62,7 +62,14 @@ class CustomNetworkImage extends StatelessWidget {
 
   Widget _buildBlankPlaceholder() {
     return Container(
-      color: const Color(0xFFF7F8F6),
+      color: const Color(0xFFF4F6F3),
+      child: const Center(
+        child: Icon(
+          Icons.shopping_basket_outlined,
+          color: Color(0xFF386626),
+          size: 22,
+        ),
+      ),
     );
   }
 }

@@ -27,11 +27,23 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
   int _selectedImageIndex = 0;
   late String _selectedOption;
   late List<String> _options;
+  final ScrollController _chipsScrollController = ScrollController();
+  dynamic _lastSyncedWeight;
+  num? _lastSyncedQty;
 
   @override
   void initState() {
     super.initState();
     _initOptions();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToSelectedChip();
+    });
+  }
+
+  @override
+  void dispose() {
+    _chipsScrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -40,28 +52,118 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
     if (oldWidget.item.id != widget.item.id ||
         oldWidget.item.categoryType != widget.item.categoryType ||
         oldWidget.item.stock != widget.item.stock) {
+      _lastSyncedWeight = null;
+      _lastSyncedQty = null;
       _initOptions();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToSelectedChip();
+      });
     }
   }
 
   void _initOptions() {
     _options = _generateOptions();
-    if (_options.isNotEmpty) {
-      if (widget.item.isGramType && (_options.contains('1 KG') || _options.contains('1KG') || _options.contains('1kg'))) {
-        _selectedOption = _options.contains('1 KG') ? '1 KG' : (_options.contains('1KG') ? '1KG' : '1kg');
-      } else {
-        _selectedOption = _options.first;
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+    final cartItem = cartProvider.getCartItem(widget.item.id);
+
+    if (cartItem != null) {
+      final matchedOption = getOptionForCartItem(cartItem, _options);
+      if (!_options.contains(matchedOption)) {
+        _options.add(matchedOption);
+        _sortOptions(_options);
       }
+      _selectedOption = matchedOption;
+      _lastSyncedWeight = cartItem.selectedWeight;
+      _lastSyncedQty = cartItem.quantity;
     } else {
-      if (widget.item.isQuantityType) {
-        _selectedOption = '1 Qty';
-      } else if (widget.item.isGramType) {
-        _selectedOption = '1 KG';
+      if (_options.isNotEmpty) {
+        if (widget.item.isGramType &&
+            (_options.contains('1 KG') ||
+                _options.contains('1KG') ||
+                _options.contains('1kg'))) {
+          _selectedOption = _options.contains('1 KG')
+              ? '1 KG'
+              : (_options.contains('1KG') ? '1KG' : '1kg');
+        } else {
+          _selectedOption = _options.first;
+        }
       } else {
-        final unit = widget.item.displayUnit;
-        _selectedOption = unit.isNotEmpty ? '1 $unit' : '1';
+        if (widget.item.isQuantityType) {
+          _selectedOption = '1 Qty';
+        } else if (widget.item.isGramType) {
+          _selectedOption = '1 KG';
+        } else {
+          final unit = widget.item.displayUnit;
+          _selectedOption = unit.isNotEmpty ? '1 $unit' : '1';
+        }
       }
     }
+  }
+
+  void _sortOptions(List<String> list) {
+    list.sort((a, b) {
+      final qtyA = parseQuantityFromWeight(a, 0);
+      final qtyB = parseQuantityFromWeight(b, 0);
+      return qtyA.compareTo(qtyB);
+    });
+  }
+
+  void _syncWithCart(CartItem? cartItem) {
+    if (cartItem == null) {
+      _lastSyncedWeight = null;
+      _lastSyncedQty = null;
+      return;
+    }
+
+    final hasCartWeightChanged =
+        _lastSyncedWeight != cartItem.selectedWeight ||
+        _lastSyncedQty != cartItem.quantity;
+
+    if (hasCartWeightChanged) {
+      final matched = getOptionForCartItem(cartItem, _options);
+      if (!_options.contains(matched)) {
+        _options.add(matched);
+        _sortOptions(_options);
+      }
+      _selectedOption = matched;
+      _lastSyncedWeight = cartItem.selectedWeight;
+      _lastSyncedQty = cartItem.quantity;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToSelectedChip();
+      });
+    }
+  }
+
+  void _scrollToSelectedChip() {
+    if (!_chipsScrollController.hasClients) return;
+    final index = _options.indexWhere(
+      (opt) => _isOptionSelected(opt, _selectedOption),
+    );
+    if (index > 2) {
+      const chipEstimatedWidth = 85.0;
+      final targetOffset = (index * chipEstimatedWidth) - 50.0;
+      _chipsScrollController.animateTo(
+        targetOffset.clamp(
+          0.0,
+          _chipsScrollController.position.maxScrollExtent,
+        ),
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  bool _isOptionSelected(String option, String selectedOption) {
+    if (option == selectedOption) return true;
+    final optNorm = option.toLowerCase().replaceAll(' ', '');
+    final selNorm = selectedOption.toLowerCase().replaceAll(' ', '');
+    if (optNorm == selNorm) return true;
+    final optQty = parseQuantityFromWeight(option, -1);
+    final selQty = parseQuantityFromWeight(selectedOption, -2);
+    if (optQty > 0 && selQty > 0 && (optQty - selQty).abs() < 0.0001) {
+      return true;
+    }
+    return false;
   }
 
   List<String> _generateOptions() {
@@ -75,6 +177,7 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
     } else if (widget.item.isGramType) {
       if (maxStock >= 0.25) list.add('250 G');
       if (maxStock >= 0.5) list.add('500 G');
+      if (maxStock >= 0.75) list.add('750 G');
       for (double kg = 1.0; kg <= maxStock + 0.0001; kg += 0.5) {
         if (kg % 1 == 0) {
           list.add('${kg.toInt()} KG');
@@ -98,11 +201,21 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
   void _handleOptionChange(String option) {
     setState(() {
       _selectedOption = option;
+      _lastSyncedWeight = option;
+      _lastSyncedQty = parseQuantityFromWeight(option, 1);
     });
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     if (cartProvider.isItemInCart(widget.item.id)) {
       cartProvider.updateItemWeight(widget.item.id, option).catchError((e) {
         if (!mounted) return;
+        final currentCartItem = cartProvider.getCartItem(widget.item.id);
+        if (currentCartItem != null) {
+          setState(() {
+            _selectedOption = getOptionForCartItem(currentCartItem, _options);
+            _lastSyncedWeight = currentCartItem.selectedWeight;
+            _lastSyncedQty = currentCartItem.quantity;
+          });
+        }
         final errorMsg = e.toString().replaceAll('Exception: ', '');
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -175,11 +288,12 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
           SizedBox(
             height: 38,
             child: ListView.builder(
+              controller: _chipsScrollController,
               scrollDirection: Axis.horizontal,
-              itemCount: _options.length > 5 ? 5 : _options.length,
+              itemCount: _options.length,
               itemBuilder: (context, index) {
                 final option = _options[index];
-                final isSelected = option == _selectedOption;
+                final isSelected = _isOptionSelected(option, _selectedOption);
                 return Padding(
                   padding: const EdgeInsets.only(right: 8.0),
                   child: Material(
@@ -303,7 +417,8 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
                           color: AppTheme.textDark,
                         ),
                         items: _options.map((opt) {
-                          final isCurrent = opt == _selectedOption;
+                          final isCurrent =
+                              _isOptionSelected(opt, _selectedOption);
                           return DropdownMenuItem<String>(
                             value: opt,
                             child: Row(
@@ -478,6 +593,10 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cartProvider = Provider.of<CartProvider>(context);
+    final cartItem = cartProvider.getCartItem(widget.item.id);
+    _syncWithCart(cartItem);
+
     final displayImages = widget.item.images.isNotEmpty
         ? widget.item.images
         : [widget.item.image];

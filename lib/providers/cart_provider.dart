@@ -13,6 +13,7 @@ class CartProvider with ChangeNotifier {
   // Empty initial cart per requirement: "Remove all default cart values"
   final List<CartItem> _items = [];
   bool _isLoading = false;
+  bool _hasNetworkError = false;
   double _deliveryFee = 0.0;
 
   CheckoutDetails? _checkoutDetails;
@@ -25,11 +26,28 @@ class CartProvider with ChangeNotifier {
 
   List<CartItem> get items => List.unmodifiable(_items);
   bool get isLoading => _isLoading;
+  bool get hasNetworkError => _hasNetworkError;
   CheckoutDetails? get checkoutDetails => _checkoutDetails;
   bool get isLoadingCheckout => _isLoadingCheckout;
   String? get checkoutError => _checkoutError;
 
   int get itemCount => _items.length;
+
+  bool _isNetworkError(dynamic e) {
+    final str = e.toString().toLowerCase();
+    return str.contains('socketexception') ||
+        str.contains('failed host lookup') ||
+        str.contains('no address associated with hostname') ||
+        str.contains('connection refused') ||
+        str.contains('clientexception') ||
+        str.contains('unable to connect') ||
+        str.contains('network') ||
+        str.contains('no internet') ||
+        str.contains('connection failed') ||
+        str.contains('connection reset') ||
+        str.contains('errno = 7') ||
+        str.contains('errno = 111');
+  }
 
   Future<void> fetchDeliveryFee() async {
     try {
@@ -48,6 +66,7 @@ class CartProvider with ChangeNotifier {
       _checkoutDetails = null;
       _checkoutError = null;
       _isLoading = false;
+      _hasNetworkError = false;
       notifyListeners();
       return;
     }
@@ -59,11 +78,15 @@ class CartProvider with ChangeNotifier {
       final fetchedItems = await _apiService.getCartItems();
       _items.clear();
       _items.addAll(fetchedItems);
+      _hasNetworkError = false;
       await fetchDeliveryFee();
     } catch (e) {
       debugPrint('Error fetching cart items from API: $e');
       _items.clear();
       _checkoutDetails = null;
+      if (_isNetworkError(e)) {
+        _hasNetworkError = true;
+      }
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -89,8 +112,7 @@ class CartProvider with ChangeNotifier {
       final codMethod = PaymentMethodData(
         id: 'cod',
         paymentType: 'COD',
-        description:
-            "Pay when your fresh produce arrives at your door. We accept exact cash or card via our driver's terminal.",
+        description: "Pay when your fresh produce arrives at your door. We accept exact cash or card via our driver's terminal.",
       );
 
       if (addresses.isEmpty) {
@@ -107,7 +129,7 @@ class CartProvider with ChangeNotifier {
           deliveryAddress: DeliveryAddressData(
             id: activeAddr.id,
             fullName: '',
-            phoneNumber: '',
+            phoneNumber: activeAddr.phoneNumber,
             addressLine1: activeAddr.buildingName,
             addressLine2: activeAddr.streetName,
             city: activeAddr.city,
@@ -134,19 +156,39 @@ class CartProvider with ChangeNotifier {
   }
 
   bool isItemInCart(dynamic itemId) {
+    if (itemId == null) return false;
     return _items.any(
       (cartItem) => cartItem.item.id.toString() == itemId.toString(),
     );
   }
 
+  CartItem? getCartItem(dynamic itemId) {
+    if (itemId == null) return null;
+    final idStr = itemId.toString();
+    for (final cartItem in _items) {
+      if (cartItem.item.id.toString() == idStr) {
+        return cartItem;
+      }
+    }
+    return null;
+  }
+
   Future<void> addToCart(
     SubCategoryItem item, {
-    String weight = '1kg',
+    String? weight,
     num? quantity,
   }) async {
     if (item.isOutOfStock) {
       throw Exception('${item.subcategoryName} is currently out of stock.');
     }
+
+    final String resolvedWeight = (weight != null && weight.trim().isNotEmpty)
+        ? weight.trim()
+        : (item.isQuantityType
+            ? '1 Qty'
+            : (item.isGramType
+                ? '1kg'
+                : (item.displayUnit.isNotEmpty ? '1 ${item.displayUnit}' : '1kg')));
 
     final itemIdStr = item.id.toString();
     if (_processingItemIds.contains(itemIdStr)) return;
@@ -157,7 +199,7 @@ class CartProvider with ChangeNotifier {
     );
     final isAlreadyInCart = existingIndex >= 0;
 
-    num effectiveQty = quantity ?? parseQuantityFromWeight(weight, 1);
+    num effectiveQty = quantity ?? parseQuantityFromWeight(resolvedWeight, 1);
 
     dynamic existingCartId;
     CartItem? previousItem;
@@ -170,11 +212,15 @@ class CartProvider with ChangeNotifier {
         selectedWeight: _items[existingIndex].selectedWeight,
         quantity: _items[existingIndex].quantity,
       );
-      _items[existingIndex].selectedWeight = weight;
+      _items[existingIndex].selectedWeight = resolvedWeight;
       _items[existingIndex].quantity = effectiveQty;
     } else {
       _items.add(
-        CartItem(item: item, selectedWeight: weight, quantity: effectiveQty),
+        CartItem(
+          item: item,
+          selectedWeight: resolvedWeight,
+          quantity: effectiveQty,
+        ),
       );
     }
     notifyListeners();
@@ -185,14 +231,14 @@ class CartProvider with ChangeNotifier {
         await _apiService.updateCartItem(
           cartId: existingCartId,
           item: item,
-          weight: weight,
+          weight: resolvedWeight,
           quantity: effectiveQty,
         );
       } else {
         // If item is new, add using POST http://localhost:3000/api/cart/add
         final res = await _apiService.addToCart(
           item: item,
-          weight: weight,
+          weight: resolvedWeight,
           quantity: effectiveQty,
         );
         final returnedId =
@@ -347,14 +393,30 @@ class CartProvider with ChangeNotifier {
     }
   }
 
+  double get originalSubtotal {
+    return _items.fold(
+      0.0,
+      (sum, cartItem) => sum + cartItem.totalOriginalPrice,
+    );
+  }
+
+  double get totalSavings {
+    final savings = originalSubtotal - subtotal;
+    return savings > 0 ? savings : 0.0;
+  }
+
   double get subtotal {
     return _items.fold(0.0, (sum, cartItem) => sum + cartItem.totalPrice);
   }
 
+  double get baseDeliveryFee => _deliveryFee > 0 ? _deliveryFee : 40.0;
+
+  bool get isFreeDelivery => _items.isNotEmpty && subtotal >= 400.0;
+
   // Dynamic delivery fee retrieved from GET http://localhost/api/shop/app-setting (data.deliveryFee)
   double get deliveryFee {
-    if (_items.isEmpty) return 0.0;
-    return subtotal < 400.0 ? _deliveryFee : 0.0;
+    if (_items.isEmpty || isFreeDelivery) return 0.0;
+    return baseDeliveryFee;
   }
 
   double get grandTotal {

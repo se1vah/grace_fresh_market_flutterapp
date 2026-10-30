@@ -17,6 +17,10 @@ Widget buildWebImage(String url, BoxFit fit, {bool isGray = false}) {
         ..style.pointerEvents = 'none'
         ..style.objectFit = fit == BoxFit.cover ? 'cover' : 'contain';
 
+      img.onError.listen((_) {
+        img.style.display = 'none';
+      });
+
       if (isGray) {
         img.style.filter = 'grayscale(100%) opacity(0.6)';
       }

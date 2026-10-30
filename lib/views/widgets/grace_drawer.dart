@@ -142,12 +142,16 @@ class GraceDrawer extends StatelessWidget {
                   width: double.infinity,
                   height: 48,
                   child: OutlinedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
+                    onPressed: () async {
+                      final navigator = Navigator.of(context);
+                      final messenger = ScaffoldMessenger.of(context);
+                      final cartProvider = context.read<CartProvider>();
+
+                      navigator.pop();
                       if (isLoggedIn) {
-                        authProvider.logout();
-                        context.read<CartProvider>().clearCart();
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        await authProvider.logout();
+                        cartProvider.clearCart();
+                        messenger.showSnackBar(
                           SnackBar(
                             content: Text(
                               'Signed out successfully',
@@ -156,8 +160,14 @@ class GraceDrawer extends StatelessWidget {
                             behavior: SnackBarBehavior.floating,
                           ),
                         );
+                        navigator.pushAndRemoveUntil(
+                          MaterialPageRoute(
+                            builder: (context) => const LoginScreen(),
+                          ),
+                          (route) => false,
+                        );
                       } else {
-                        Navigator.of(context).push(
+                        navigator.push(
                           MaterialPageRoute(
                             builder: (context) => const LoginScreen(),
                           ),

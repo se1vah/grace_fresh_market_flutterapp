@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
+import '../providers/shop_provider.dart';
 import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import 'auth/login_screen.dart';
@@ -47,6 +48,7 @@ class MainNavigationScreen extends StatefulWidget {
 
 class MainNavigationScreenState extends State<MainNavigationScreen> {
   late int _currentIndex;
+  int get currentIndex => _currentIndex;
   final GlobalKey<NotificationsScreenState> _notificationsKey = GlobalKey();
 
   @override
@@ -63,8 +65,11 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
       if (mounted) {
         NotificationService.checkPendingNotificationNavigation(context);
       }
-      if (_currentIndex == 1) {
+      if (_currentIndex == 0) {
+        context.read<ShopProvider>().fetchSubCategories(showLoading: false);
+      } else if (_currentIndex == 1) {
         context.read<CartProvider>().fetchCartItems();
+        context.read<CartProvider>().fetchCheckoutDetails();
       } else if (_currentIndex == 2) {
         _notificationsKey.currentState?.refreshNotifications();
       }
@@ -88,11 +93,16 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   void setIndex(int index) {
-    setState(() {
-      _currentIndex = index;
-    });
-    if (index == 1) {
+    if (_currentIndex != index) {
+      setState(() {
+        _currentIndex = index;
+      });
+    }
+    if (index == 0) {
+      context.read<ShopProvider>().fetchSubCategories(showLoading: false);
+    } else if (index == 1) {
       context.read<CartProvider>().fetchCartItems();
+      context.read<CartProvider>().fetchCheckoutDetails();
     } else if (index == 2) {
       _notificationsKey.currentState?.refreshNotifications();
     }

@@ -262,6 +262,108 @@ class AuthProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Handle final password reset submit & establish login state if 200 OK
+  Future<Map<String, dynamic>> resetPasswordSubmit({
+    required String email,
+    required String confirmationCode,
+    required String newPassword,
+    required String confirmPassword,
+    String? fcmToken,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final String? effectiveFcmToken =
+          fcmToken ?? await NotificationService.getFcmToken();
+
+      final response = await _apiService.confirmForgotPassword(
+        email: email,
+        confirmationCode: confirmationCode,
+        newPassword: newPassword,
+        confirmPassword: confirmPassword,
+        fcmToken: effectiveFcmToken,
+      );
+
+      if (response['statusCode'] != 200) {
+        _isLoading = false;
+        _errorMessage = response['message'] ?? response['error'] ?? 'Password reset failed.';
+        notifyListeners();
+        return {
+          'success': false,
+          'message': _errorMessage,
+          'statusCode': response['statusCode'],
+        };
+      }
+
+      // Check if API returned a token directly
+      String? token;
+      if (response.containsKey('token') && response['token'] != null) {
+        token = response['token'].toString();
+      } else if (response.containsKey('user_token') &&
+          response['user_token'] != null) {
+        token = response['user_token'].toString();
+      } else if (response.containsKey('data') && response['data'] is Map) {
+        token =
+            response['data']['token']?.toString() ??
+            response['data']['user_token']?.toString();
+      }
+
+      if (token != null && token.isNotEmpty) {
+        CookieHelper.setCookie(EnvConfig.authCookieName, token);
+        _userToken = token;
+        _isAuthenticated = true;
+
+        Map<String, dynamic> userData = {};
+        if (response['user'] is Map<String, dynamic>) {
+          userData = response['user'];
+        } else if (response['data'] is Map<String, dynamic> &&
+            response['data']['user'] is Map<String, dynamic>) {
+          userData = response['data']['user'];
+        } else if (response['data'] is Map<String, dynamic>) {
+          userData = response['data'];
+        } else {
+          userData = {
+            'email': email,
+            'full_name': email.split('@').first,
+          };
+        }
+
+        _user = UserModel.fromJson(userData);
+        CookieHelper.setCookie(
+          EnvConfig.userCookieName,
+          jsonEncode(_user!.toJson()),
+        );
+
+        _initSocketListener();
+        _isLoading = false;
+        notifyListeners();
+
+        return {
+          'success': true,
+          'message': 'Password reset successful!',
+          'token': token,
+        };
+      } else {
+        // If 200 response but no token returned in body, automatically login with new credentials
+        final loginResult = await login(
+          emailOrPhone: email,
+          password: newPassword,
+          fcmToken: effectiveFcmToken,
+        );
+        _isLoading = false;
+        notifyListeners();
+        return loginResult;
+      }
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      return {'success': false, 'message': _errorMessage};
+    }
+  }
+
   final List<VoidCallback> _logoutListeners = [];
 
   void addLogoutListener(VoidCallback listener) {

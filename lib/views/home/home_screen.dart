@@ -4,13 +4,16 @@ import 'package:provider/provider.dart';
 
 import '../../providers/shop_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/route_observer.dart';
 import '../item_details/item_details_screen.dart';
+import '../main_navigation_screen.dart';
 import '../widgets/grace_app_bar.dart';
 import '../widgets/grace_drawer.dart';
 import '../widgets/custom_network_image.dart';
 import '../widgets/skeleton_loader.dart';
 import 'widgets/category_pills.dart';
 import 'widgets/item_card.dart';
+import '../no_internet_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,17 +22,64 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with RouteAware {
   final TextEditingController _searchController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<ShopProvider>().fetchSubCategories(showLoading: false);
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final modalRoute = ModalRoute.of(context);
+    if (modalRoute != null) {
+      routeObserver.subscribe(this, modalRoute);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    // Called when user returns to Home screen after popping a child route (e.g. ItemDetailsScreen)
+    final nav = MainNavigationScreen.activeState;
+    if (nav == null || nav.currentIndex == 0) {
+      if (mounted) {
+        context.read<ShopProvider>().fetchSubCategories(showLoading: false);
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final shopProviderWatch = Provider.of<ShopProvider>(context);
+
+    if (shopProviderWatch.hasNetworkError &&
+        shopProviderWatch.activeItems.isEmpty &&
+        !shopProviderWatch.isLoadingItems &&
+        !shopProviderWatch.isLoadingCategories) {
+      return Scaffold(
+        backgroundColor: AppTheme.backgroundColor,
+        appBar: const GraceAppBar(),
+        drawer: const GraceDrawer(currentRoute: 'home'),
+        body: NoInternetScreen(
+          showBackButton: false,
+          onRetry: () => shopProviderWatch.fetchAllData(),
+        ),
+      );
+    }
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: AppTheme.backgroundColor,
@@ -38,8 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: RefreshIndicator(
         onRefresh: () async {
           final shop = Provider.of<ShopProvider>(context, listen: false);
-          await shop.fetchCategories();
-          await shop.fetchSubCategories();
+          await shop.fetchAllData();
         },
         color: AppTheme.darkGreen,
         child: CustomScrollView(
@@ -206,14 +255,73 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     color: AppTheme.textDark,
                                                   ),
                                                 ),
-                                                subtitle: Text(
-                                                  '₹${item.amount.toStringAsFixed(2)} / kg',
-                                                  style: GoogleFonts.outfit(
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: AppTheme.darkGreen,
-                                                  ),
-                                                ),
+                                                subtitle: Wrap(
+                                                   crossAxisAlignment:
+                                                       WrapCrossAlignment
+                                                           .center,
+                                                   spacing: 6,
+                                                   children: [
+                                                     Text(
+                                                        '₹${item.unitFinalPrice.toStringAsFixed(2)}${item.priceUnitSuffix}',
+                                                       style: GoogleFonts.outfit(
+                                                         fontSize: 13,
+                                                         fontWeight:
+                                                             FontWeight.bold,
+                                                         color:
+                                                             AppTheme.darkGreen,
+                                                       ),
+                                                     ),
+                                                     if (item.hasOffer) ...[
+                                                       Text(
+                                                          '₹${item.unitOriginalPrice.toStringAsFixed(2)}',
+                                                         style:
+                                                             GoogleFonts.outfit(
+                                                           fontSize: 11,
+                                                           fontWeight:
+                                                               FontWeight.w500,
+                                                           color: AppTheme
+                                                               .textSecondary,
+                                                           decoration:
+                                                               TextDecoration
+                                                                   .lineThrough,
+                                                         ),
+                                                       ),
+                                                       Container(
+                                                         padding:
+                                                             const EdgeInsets
+                                                                 .symmetric(
+                                                           horizontal: 6,
+                                                           vertical: 2,
+                                                         ),
+                                                         decoration:
+                                                             BoxDecoration(
+                                                           color:
+                                                               const Color(
+                                                                 0xFFFF5252,
+                                                               ).withAlpha(25),
+                                                           borderRadius:
+                                                               BorderRadius
+                                                                   .circular(6),
+                                                         ),
+                                                         child: Text(
+                                                            '${item.effectiveOfferPercentage % 1 == 0 ? item.effectiveOfferPercentage.round() : item.effectiveOfferPercentage.toStringAsFixed(1)}% OFF',
+                                                           style:
+                                                               GoogleFonts
+                                                                   .outfit(
+                                                                 fontSize: 10,
+                                                                 fontWeight:
+                                                                     FontWeight
+                                                                         .bold,
+                                                                 color:
+                                                                     const Color(
+                                                                   0xFFD32F2F,
+                                                                 ),
+                                                               ),
+                                                         ),
+                                                       ),
+                                                     ],
+                                                   ],
+                                                 ),
                                                 trailing: const Icon(
                                                   Icons.chevron_right,
                                                   color: Colors.grey,

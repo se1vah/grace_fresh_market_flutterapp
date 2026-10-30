@@ -10,11 +10,13 @@ import 'providers/shop_provider.dart';
 import 'providers/cart_provider.dart';
 import 'providers/auth_provider.dart';
 import 'theme/app_theme.dart';
-import 'views/main_navigation_screen.dart';
+import 'views/maintenance_gate.dart';
 
 import 'firebase_options.dart';
 import 'services/notification_service.dart';
+import 'services/socket_service.dart';
 import 'utils/cookie_helper.dart';
+import 'utils/route_observer.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,14 +26,21 @@ Future<void> main() async {
 
   GoogleFonts.config.allowRuntimeFetching = true;
 
-  // Initialize Firebase
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Initialize Firebase & notifications safely
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    // Register background FCM handler
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    // Initialize notifications
+    await NotificationService.initialize();
+  } catch (e) {
+    debugPrint('Firebase/Notification initialization error: $e');
+  }
 
-  // Register background FCM handler
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-  // Initialize notifications
-  await NotificationService.initialize();
+  // Initialize SocketService for realtime events (e.g. user-maintenance-notification)
+  SocketService.instance.initialize();
 
   runApp(const GraceFreshMarketApp());
 }
@@ -48,14 +57,18 @@ class _GraceFreshMarketAppState extends State<GraceFreshMarketApp> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      FirebaseMessaging.instance.getInitialMessage().then((message) {
-        if (message != null) {
-          debugPrint(
-            'getInitialMessage triggered in GraceFreshMarketApp initState',
-          );
-          NotificationService.navigateToNotificationScreen();
-        }
-      });
+      if (Firebase.apps.isNotEmpty) {
+        FirebaseMessaging.instance.getInitialMessage().then((message) {
+          if (message != null) {
+            debugPrint(
+              'getInitialMessage triggered in GraceFreshMarketApp initState',
+            );
+            NotificationService.navigateToNotificationScreen();
+          }
+        }).catchError((err) {
+          debugPrint('Error fetching initial FCM message: $err');
+        });
+      }
     });
   }
 
@@ -69,6 +82,7 @@ class _GraceFreshMarketAppState extends State<GraceFreshMarketApp> {
       ],
       child: MaterialApp(
         navigatorKey: NotificationService.navigatorKey,
+        navigatorObservers: [routeObserver],
         title: EnvConfig.appName,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.theme,
@@ -81,7 +95,7 @@ class _GraceFreshMarketAppState extends State<GraceFreshMarketApp> {
             child: child!,
           );
         },
-        home: const MainNavigationScreen(),
+        home: const MaintenanceGate(),
       ),
     );
   }

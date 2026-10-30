@@ -92,6 +92,9 @@ class OrderItemModel {
   final List<String> images;
   final String? subCategoryType;
 
+  final double? originalAmount;
+  final double? offerAmount;
+
   OrderItemModel({
     this.id,
     this.categoryId,
@@ -102,7 +105,33 @@ class OrderItemModel {
     this.subcategoryAmount,
     this.images = const [],
     this.subCategoryType,
+    this.originalAmount,
+    this.offerAmount,
   });
+
+  double get totalOriginalAmount {
+    if (originalAmount != null && originalAmount! > 0) {
+      return originalAmount! * quantity;
+    }
+    final unitPrice = subcategoryAmount ?? 0.0;
+    if (unitPrice > 0) {
+      return unitPrice * quantity;
+    }
+    return itemTotal;
+  }
+
+  double get totalOfferAmount {
+    if (offerAmount != null && offerAmount! > 0) {
+      return offerAmount!;
+    }
+    final orig = totalOriginalAmount;
+    if (orig > itemTotal) {
+      return orig - itemTotal;
+    }
+    return 0.0;
+  }
+
+  bool get hasOffer => totalOfferAmount > 0;
 
   bool get isGramType {
     if (subCategoryType == null) return false;
@@ -132,51 +161,136 @@ class OrderItemModel {
         final grams = (quantity * 1000).round();
         return '$grams G';
       }
-      final kgStr = quantity % 1 == 0 ? quantity.toInt().toString() : quantity.toString();
+      final kgStr = quantity % 1 == 0
+          ? quantity.toInt().toString()
+          : quantity.toString();
       return '$kgStr KG';
     }
     if (unit.isNotEmpty) {
-      final qtyStr = quantity % 1 == 0 ? quantity.toInt().toString() : quantity.toString();
+      final qtyStr = quantity % 1 == 0
+          ? quantity.toInt().toString()
+          : quantity.toString();
       return '$qtyStr $unit';
     }
-    final qtyStr = quantity % 1 == 0 ? quantity.toInt().toString() : quantity.toString();
+    final qtyStr = quantity % 1 == 0
+        ? quantity.toInt().toString()
+        : quantity.toString();
     return qtyStr;
   }
 
   factory OrderItemModel.fromJson(Map<String, dynamic> json) {
-    String? name = json['subcategoryName'] ?? json['name'] ?? json['title'] ?? json['productName'];
+    String? name =
+        json['subcategoryName'] ??
+        json['name'] ??
+        json['title'] ??
+        json['productName'];
     double? amount = double.tryParse(
       (json['subcategoryAmount'] ?? json['amount'] ?? json['price'] ?? '0')
           .toString(),
     );
-    List<String> imgList = [];
 
-    if (json['images'] is List) {
-      imgList = (json['images'] as List)
-          .map((e) => EnvConfig.formatImageUrl(e.toString()))
-          .toList();
-    } else if (json['image'] != null) {
-      imgList = [EnvConfig.formatImageUrl(json['image'].toString())];
+    List<String> parseImagesFromAny(Map<String, dynamic> map) {
+      final List<String> result = [];
+
+      void addRaw(dynamic val) {
+        if (val == null) return;
+        if (val is List) {
+          for (var e in val) {
+            addRaw(e);
+          }
+          return;
+        }
+        var str = val.toString().trim();
+        if (str.isEmpty || str == 'null' || str == 'undefined') return;
+
+        if (str.startsWith('[') && str.endsWith(']')) {
+          str = str.substring(1, str.length - 1).trim();
+        }
+        if (str.contains(',')) {
+          final parts = str.split(',');
+          for (var p in parts) {
+            addRaw(p);
+          }
+          return;
+        }
+
+        if ((str.startsWith('"') && str.endsWith('"')) ||
+            (str.startsWith("'") && str.endsWith("'"))) {
+          str = str.substring(1, str.length - 1).trim();
+        }
+        if (str.isEmpty || str == 'null' || str == 'undefined') return;
+
+        final formatted = EnvConfig.formatImageUrl(str);
+        if (formatted.isNotEmpty && !result.contains(formatted)) {
+          result.add(formatted);
+        }
+      }
+
+      final keysToTry = [
+        'images',
+        'image',
+        'subcategoryImage',
+        'subcategory_image',
+        'subcategoryImages',
+        'subcategory_images',
+        'imageUrl',
+        'image_url',
+        'img',
+        'imgUrl',
+        'img_url',
+        'imagePath',
+        'image_path',
+        'photo',
+        'picture',
+      ];
+
+      for (final key in keysToTry) {
+        if (map[key] != null) {
+          addRaw(map[key]);
+        }
+      }
+
+      return result;
     }
 
-    final rawType = (json['sub_category_type'] ??
-            json['subCategoryType'] ??
-            json['subcategory_type'] ??
-            json['subcategoryType'] ??
-            json['category_type'] ??
-            json['categoryType'] ??
-            json['unit_type'] ??
-            json['unitType'] ??
-            json['type'] ??
-            json['unit'] ??
-            (json['subcategory'] is Map<String, dynamic>
-                ? (json['subcategory'] as Map<String, dynamic>)['sub_category_type'] ??
-                    (json['subcategory'] as Map<String, dynamic>)['subCategoryType'] ??
-                    (json['subcategory'] as Map<String, dynamic>)['category_type'] ??
-                    (json['subcategory'] as Map<String, dynamic>)['categoryType']
-                : null))
-        ?.toString()
-        .trim();
+    List<String> imgList = parseImagesFromAny(json);
+
+    if (imgList.isEmpty && json['subcategory'] is Map<String, dynamic>) {
+      imgList = parseImagesFromAny(json['subcategory'] as Map<String, dynamic>);
+    }
+    if (imgList.isEmpty && json['subCategory'] is Map<String, dynamic>) {
+      imgList = parseImagesFromAny(json['subCategory'] as Map<String, dynamic>);
+    }
+    if (imgList.isEmpty && json['product'] is Map<String, dynamic>) {
+      imgList = parseImagesFromAny(json['product'] as Map<String, dynamic>);
+    }
+    if (imgList.isEmpty && json['item'] is Map<String, dynamic>) {
+      imgList = parseImagesFromAny(json['item'] as Map<String, dynamic>);
+    }
+
+    final rawType =
+        (json['sub_category_type'] ??
+                json['subCategoryType'] ??
+                json['subcategory_type'] ??
+                json['subcategoryType'] ??
+                json['category_type'] ??
+                json['categoryType'] ??
+                json['unit_type'] ??
+                json['unitType'] ??
+                json['type'] ??
+                json['unit'] ??
+                (json['subcategory'] is Map<String, dynamic>
+                    ? (json['subcategory']
+                              as Map<String, dynamic>)['sub_category_type'] ??
+                          (json['subcategory']
+                              as Map<String, dynamic>)['subCategoryType'] ??
+                          (json['subcategory']
+                              as Map<String, dynamic>)['category_type'] ??
+                          (json['subcategory']
+                              as Map<String, dynamic>)['categoryType']
+                    : null))
+            ?.toString()
+            .trim();
 
     if (json['subcategory'] is Map<String, dynamic>) {
       final sub = json['subcategory'] as Map<String, dynamic>;
@@ -184,21 +298,37 @@ class OrderItemModel {
       if (sub['amount'] != null && (amount == null || amount == 0.0)) {
         amount = double.tryParse(sub['amount'].toString());
       }
-      if (imgList.isEmpty && sub['images'] is List) {
-        imgList = (sub['images'] as List)
-            .map((e) => EnvConfig.formatImageUrl(e.toString()))
-            .toList();
-      } else if (imgList.isEmpty && sub['image'] != null) {
-        imgList = [EnvConfig.formatImageUrl(sub['image'].toString())];
-      }
     }
 
     final parsedQty = num.tryParse(json['quantity']?.toString() ?? '1') ?? 1;
-    final itemTot = double.tryParse(
+    final itemTot =
+        double.tryParse(
           json['itemTotal']?.toString() ?? json['total']?.toString() ?? '0',
         ) ??
         0.0;
     final total = itemTot > 0 ? itemTot : ((amount ?? 0.0) * parsedQty);
+
+    final rawOrig =
+        json['original_amount'] ??
+        json['originalAmount'] ??
+        json['mrp'] ??
+        json['totalOriginalAmount'] ??
+        (json['subcategory'] is Map<String, dynamic>
+            ? (json['subcategory']
+                      as Map<String, dynamic>)['original_amount'] ??
+                  (json['subcategory']
+                      as Map<String, dynamic>)['originalAmount']
+            : null);
+    final origAmt = rawOrig != null
+        ? double.tryParse(rawOrig.toString())
+        : null;
+
+    final rawOff =
+        json['totalOfferAmount'] ??
+        json['total_offer_amount'] ??
+        json['offerAmount'] ??
+        json['offer_amount'];
+    final offAmt = rawOff != null ? double.tryParse(rawOff.toString()) : null;
 
     return OrderItemModel(
       id: json['id'],
@@ -210,6 +340,8 @@ class OrderItemModel {
       subcategoryAmount: amount,
       images: imgList,
       subCategoryType: rawType,
+      originalAmount: origAmt,
+      offerAmount: offAmt,
     );
   }
 }
@@ -247,15 +379,36 @@ class OrderModel {
     this.updatedAt,
   });
 
-  factory OrderModel.fromJson(Map<String, dynamic> json) {
+  factory OrderModel.fromJson(Map<String, dynamic> raw) {
+    // 1. Data root map
+    final dataMap = (raw['data'] is Map<String, dynamic>)
+        ? raw['data'] as Map<String, dynamic>
+        : raw;
+
+    // 2. Order map
+    final orderMap = (dataMap['order'] is Map<String, dynamic>)
+        ? dataMap['order'] as Map<String, dynamic>
+        : (raw['order'] is Map<String, dynamic>
+              ? raw['order'] as Map<String, dynamic>
+              : null);
+
+    final json =
+        orderMap ??
+        (dataMap.containsKey('orderId') || dataMap.containsKey('id')
+            ? dataMap
+            : raw);
+
     OrderStatusModel? statusObj;
     if (json['orderStatus'] is Map<String, dynamic>) {
       statusObj = OrderStatusModel.fromJson(json['orderStatus']);
+    } else if (dataMap['orderStatus'] is Map<String, dynamic>) {
+      statusObj = OrderStatusModel.fromJson(dataMap['orderStatus']);
     }
 
     List<StatusHistoryItemModel> historyList = [];
-    if (json['statusHistory'] is List) {
-      historyList = (json['statusHistory'] as List)
+    final rawHistory = json['statusHistory'] ?? dataMap['statusHistory'];
+    if (rawHistory is List) {
+      historyList = rawHistory
           .whereType<Map<String, dynamic>>()
           .map((item) => StatusHistoryItemModel.fromJson(item))
           .toList();
@@ -264,11 +417,14 @@ class OrderModel {
     CartSummaryModel? summary;
     if (json['cartSummary'] is Map<String, dynamic>) {
       summary = CartSummaryModel.fromJson(json['cartSummary']);
+    } else if (dataMap['cartSummary'] is Map<String, dynamic>) {
+      summary = CartSummaryModel.fromJson(dataMap['cartSummary']);
     }
 
     List<OrderItemModel> itemList = [];
-    if (json['items'] is List) {
-      itemList = (json['items'] as List)
+    final rawItems = json['items'] ?? dataMap['items'] ?? raw['items'];
+    if (rawItems is List) {
+      itemList = rawItems
           .whereType<Map<String, dynamic>>()
           .map((item) => OrderItemModel.fromJson(item))
           .toList();
@@ -277,10 +433,29 @@ class OrderModel {
     Map<String, dynamic>? addressMap;
     if (json['address'] is Map<String, dynamic>) {
       addressMap = Map<String, dynamic>.from(json['address']);
+    } else if (dataMap['address'] is Map<String, dynamic>) {
+      addressMap = Map<String, dynamic>.from(dataMap['address']);
+    } else if (raw['address'] is Map<String, dynamic>) {
+      addressMap = Map<String, dynamic>.from(raw['address']);
     } else if (json['deliveryAddress'] is Map<String, dynamic>) {
       addressMap = Map<String, dynamic>.from(json['deliveryAddress']);
     } else {
       addressMap = {};
+    }
+
+    Map<String, dynamic>? paymentMap;
+    if (json['paymentMethod'] is Map<String, dynamic>) {
+      paymentMap = Map<String, dynamic>.from(json['paymentMethod']);
+    } else if (dataMap['paymentMethod'] is Map<String, dynamic>) {
+      paymentMap = Map<String, dynamic>.from(dataMap['paymentMethod']);
+    } else if (raw['paymentMethod'] is Map<String, dynamic>) {
+      paymentMap = Map<String, dynamic>.from(raw['paymentMethod']);
+    } else if (json['paymentMethod'] is String &&
+        (json['paymentMethod'] as String).isNotEmpty) {
+      paymentMap = {'paymentType': json['paymentMethod']};
+    } else if (dataMap['paymentMethod'] is String &&
+        (dataMap['paymentMethod'] as String).isNotEmpty) {
+      paymentMap = {'paymentType': dataMap['paymentMethod']};
     }
 
     String getVal(List<dynamic> options) {
@@ -293,13 +468,16 @@ class OrderModel {
     }
 
     // Extract fullName if missing or empty in addressMap
-    final existingName = addressMap['fullName'] ??
+    final existingName =
+        addressMap['fullName'] ??
         addressMap['full_name'] ??
         addressMap['name'] ??
         addressMap['receiverName'] ??
         addressMap['userName'];
     if (existingName == null || existingName.toString().trim().isEmpty) {
-      final userObj = json['user'] is Map<String, dynamic> ? json['user'] : null;
+      final userObj = json['user'] is Map<String, dynamic>
+          ? json['user']
+          : (dataMap['user'] is Map<String, dynamic> ? dataMap['user'] : null);
       final resolvedName = getVal([
         userObj?['fullName'],
         userObj?['full_name'],
@@ -307,8 +485,8 @@ class OrderModel {
         json['fullName'],
         json['full_name'],
         json['name'],
-        json['userName'],
-        json['user_name'],
+        dataMap['fullName'],
+        dataMap['full_name'],
       ]);
       if (resolvedName.isNotEmpty) {
         addressMap['fullName'] = resolvedName;
@@ -316,12 +494,15 @@ class OrderModel {
     }
 
     // Extract phoneNumber if missing or empty in addressMap
-    final existingPhone = addressMap['phoneNumber'] ??
+    final existingPhone =
+        addressMap['phoneNumber'] ??
         addressMap['phone_number'] ??
         addressMap['phone'] ??
         addressMap['mobile'];
     if (existingPhone == null || existingPhone.toString().trim().isEmpty) {
-      final userObj = json['user'] is Map<String, dynamic> ? json['user'] : null;
+      final userObj = json['user'] is Map<String, dynamic>
+          ? json['user']
+          : (dataMap['user'] is Map<String, dynamic> ? dataMap['user'] : null);
       final resolvedPhone = getVal([
         userObj?['phoneNumber'],
         userObj?['phone_number'],
@@ -329,35 +510,76 @@ class OrderModel {
         userObj?['mobile'],
         json['phoneNumber'],
         json['phone_number'],
-        json['phone'],
-        json['mobile'],
-        json['userPhone'],
+        dataMap['phoneNumber'],
+        dataMap['phone_number'],
       ]);
       if (resolvedPhone.isNotEmpty) {
         addressMap['phoneNumber'] = resolvedPhone;
       }
     }
 
+    final idVal =
+        json['id'] ??
+        json['orderId'] ??
+        json['order_id'] ??
+        dataMap['id'] ??
+        dataMap['orderId'] ??
+        0;
+    final subTotalVal =
+        double.tryParse(
+          (json['subTotal'] ??
+                  json['sub_total'] ??
+                  dataMap['subTotal'] ??
+                  dataMap['sub_total'] ??
+                  '0')
+              .toString(),
+        ) ??
+        0.0;
+    final deliveryFeeVal =
+        double.tryParse(
+          (json['deliveryFee'] ??
+                  json['delivery_fee'] ??
+                  dataMap['deliveryFee'] ??
+                  dataMap['delivery_fee'] ??
+                  '0')
+              .toString(),
+        ) ??
+        0.0;
+    final totalVal =
+        double.tryParse(
+          (json['total'] ??
+                  json['grandTotal'] ??
+                  dataMap['total'] ??
+                  dataMap['grandTotal'] ??
+                  '0')
+              .toString(),
+        ) ??
+        0.0;
+
     return OrderModel(
-      id: json['id'] ?? json['orderId'] ?? json['order_id'] ?? 0,
-      userId: json['userId'] ?? json['user_id'],
-      subTotal: double.tryParse(json['subTotal']?.toString() ?? '0') ?? 0.0,
-      totalItems: int.tryParse(json['totalItems']?.toString() ?? '0') ?? 0,
-      deliveryFee:
-          double.tryParse(json['deliveryFee']?.toString() ?? '0') ?? 0.0,
-      total: double.tryParse(json['total']?.toString() ?? '0') ?? 0.0,
+      id: idVal,
+      userId: json['userId'] ?? json['user_id'] ?? dataMap['userId'],
+      subTotal: subTotalVal,
+      totalItems:
+          int.tryParse(
+            (json['totalItems'] ?? dataMap['totalItems'] ?? itemList.length)
+                .toString(),
+          ) ??
+          itemList.length,
+      deliveryFee: deliveryFeeVal,
+      total: totalVal,
       orderStatus: statusObj,
       statusHistory: historyList,
       cartSummary: summary,
       items: itemList,
       address: addressMap,
-      paymentMethod: json['paymentMethod'] is Map<String, dynamic>
-          ? json['paymentMethod']
-          : null,
+      paymentMethod: paymentMap,
       createdAt:
-          json['createdAt']?.toString() ?? json['created_at']?.toString(),
+          (json['createdAt'] ?? json['created_at'] ?? dataMap['createdAt'])
+              ?.toString(),
       updatedAt:
-          json['updatedAt']?.toString() ?? json['updated_at']?.toString(),
+          (json['updatedAt'] ?? json['updated_at'] ?? dataMap['updatedAt'])
+              ?.toString(),
     );
   }
 
@@ -388,5 +610,37 @@ class OrderModel {
       return statusHistory.last.status;
     }
     return 'ordered';
+  }
+
+  double get calculatedSubTotal {
+    if (subTotal > 0) return subTotal;
+    if (items.isNotEmpty) {
+      return items.fold<double>(0.0, (sum, item) => sum + item.itemTotal);
+    }
+    return 0.0;
+  }
+
+  double get calculatedOriginalSubTotal {
+    if (items.isNotEmpty) {
+      final sumOrig = items.fold<double>(
+        0.0,
+        (sum, item) => sum + item.totalOriginalAmount,
+      );
+      if (sumOrig > calculatedSubTotal) return sumOrig;
+    }
+    return calculatedSubTotal;
+  }
+
+  double get calculatedTotalSavings {
+    final savings = calculatedOriginalSubTotal - calculatedSubTotal;
+    return savings > 0 ? savings : 0.0;
+  }
+
+  bool get isFreeDelivery {
+    return deliveryFee == 0 || calculatedSubTotal >= 400.0;
+  }
+
+  double get baseDeliveryFee {
+    return deliveryFee > 0 ? deliveryFee : 40.0;
   }
 }

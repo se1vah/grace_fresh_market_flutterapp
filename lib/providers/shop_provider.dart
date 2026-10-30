@@ -13,6 +13,7 @@ class ShopProvider with ChangeNotifier {
   List<SubCategoryItem> _allSubCategoryItemsCache = [];
   bool _isLoadingCategories = false;
   bool _isLoadingItems = false;
+  bool _hasNetworkError = false;
   String _searchQuery = '';
   String? _error;
   Timer? _searchDebounceTimer;
@@ -21,11 +22,10 @@ class ShopProvider with ChangeNotifier {
   dynamic get selectedCategoryId => _selectedCategoryId;
   bool get isLoadingCategories => _isLoadingCategories;
   bool get isLoadingItems => _isLoadingItems;
+  bool get hasNetworkError => _hasNetworkError;
   String? get error => _error;
   String get searchQuery => _searchQuery;
 
-  // Active status filtering requirement:
-  // "Only items where status = 'active' should be displayed in the grid container."
   List<SubCategoryItem> get activeItems {
     final activeOnly = _subCategoryItems.where((item) => item.isActive).toList();
     if (_searchQuery.trim().isEmpty) {
@@ -36,13 +36,35 @@ class ShopProvider with ChangeNotifier {
     }).toList();
   }
 
+  bool _isNetworkError(dynamic e) {
+    final str = e.toString().toLowerCase();
+    return str.contains('socketexception') ||
+        str.contains('failed host lookup') ||
+        str.contains('no address associated with hostname') ||
+        str.contains('connection refused') ||
+        str.contains('clientexception') ||
+        str.contains('unable to connect') ||
+        str.contains('network') ||
+        str.contains('no internet') ||
+        str.contains('connection failed') ||
+        str.contains('connection reset') ||
+        str.contains('errno = 7') ||
+        str.contains('errno = 111');
+  }
+
   ShopProvider() {
     initData();
   }
 
   Future<void> initData() async {
-    await fetchCategories();
-    await fetchSubCategories();
+    await fetchAllData();
+  }
+
+  Future<void> fetchAllData() async {
+    await Future.wait([
+      fetchCategories(),
+      fetchSubCategories(),
+    ]);
   }
 
   // Fetch categories from http://192.168.1.7:3000/api/shop/categories
@@ -58,9 +80,13 @@ class ShopProvider with ChangeNotifier {
         CategoryModel(id: 0, categoryName: 'All'),
         ...fetched,
       ];
+      _hasNetworkError = false;
     } catch (e) {
       final msg = e.toString().replaceAll('Exception: ', '');
       _error = msg.isNotEmpty ? msg : 'Failed to load categories';
+      if (_isNetworkError(e)) {
+        _hasNetworkError = true;
+      }
     } finally {
       _isLoadingCategories = false;
       notifyListeners();
@@ -69,10 +95,13 @@ class ShopProvider with ChangeNotifier {
 
   // Fetch sub-categories based on selected category button's categoryId & search query.
   // Fetches all items for the selected category without page size limits.
-  Future<void> fetchSubCategories() async {
-    _isLoadingItems = true;
-    _error = null;
-    notifyListeners();
+  Future<void> fetchSubCategories({bool showLoading = true}) async {
+    final bool shouldShowLoading = showLoading || _subCategoryItems.isEmpty;
+    if (shouldShowLoading) {
+      _isLoadingItems = true;
+      _error = null;
+      notifyListeners();
+    }
 
     try {
       final isAllCategory = _selectedCategoryId == 0 ||
@@ -108,10 +137,16 @@ class ShopProvider with ChangeNotifier {
       } else {
         _subCategoryItems = items;
       }
+      _hasNetworkError = false;
     } catch (e) {
-      _subCategoryItems = [];
+      if (shouldShowLoading) {
+        _subCategoryItems = [];
+      }
       final msg = e.toString().replaceAll('Exception: ', '');
       _error = msg.isNotEmpty ? msg : 'Failed to load items';
+      if (_isNetworkError(e)) {
+        _hasNetworkError = true;
+      }
     } finally {
       _isLoadingItems = false;
       notifyListeners();

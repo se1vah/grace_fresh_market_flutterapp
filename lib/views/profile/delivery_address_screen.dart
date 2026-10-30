@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/address_model.dart';
+import '../../providers/cart_provider.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../main_navigation_screen.dart';
@@ -76,6 +78,12 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
       );
 
       await _fetchAddresses();
+      if (mounted) {
+        try {
+          Provider.of<CartProvider>(context, listen: false)
+              .fetchCheckoutDetails();
+        } catch (_) {}
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -190,6 +198,12 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
       );
 
       await _fetchAddresses();
+      if (mounted) {
+        try {
+          Provider.of<CartProvider>(context, listen: false)
+              .fetchCheckoutDetails();
+        } catch (_) {}
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -488,6 +502,28 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
                 height: 1.3,
               ),
             ),
+          if (address.phoneNumber.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4.0),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.phone_outlined,
+                    size: 14,
+                    color: AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    address.phoneNumber,
+                    style: GoogleFonts.outfit(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           const SizedBox(height: 18),
 
@@ -684,6 +720,7 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
   late final TextEditingController _cityController;
   late final TextEditingController _stateController;
   late final TextEditingController _pincodeController;
+  late final TextEditingController _phoneNumberController;
 
   late String _selectedAddressType;
   bool _isSubmitting = false;
@@ -708,6 +745,9 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
     _pincodeController = TextEditingController(
       text: addr != null && addr.pincode.isNotEmpty ? addr.pincode : '623529',
     );
+    _phoneNumberController = TextEditingController(
+      text: addr?.phoneNumber ?? '',
+    );
 
     if (addr != null && addr.addressType.isNotEmpty) {
       final typeLower = addr.addressType.trim().toLowerCase();
@@ -730,6 +770,7 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
     _cityController.dispose();
     _stateController.dispose();
     _pincodeController.dispose();
+    _phoneNumberController.dispose();
     super.dispose();
   }
 
@@ -742,6 +783,8 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
       _isSubmitting = true;
     });
 
+    final phoneToSend = _phoneNumberController.text.trim();
+
     try {
       if (_isEditMode) {
         await _apiService.updateAddress(
@@ -752,6 +795,7 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
           state: _stateController.text.trim(),
           pincode: _pincodeController.text.trim(),
           addressType: _selectedAddressType,
+          phoneNumber: phoneToSend,
         );
       } else {
         await _apiService.createAddress(
@@ -761,7 +805,8 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
           state: _stateController.text.trim(),
           pincode: _pincodeController.text.trim(),
           addressType: _selectedAddressType,
-          isDefault: true,
+          isDefault: false,
+          phoneNumber: phoneToSend,
         );
       }
 
@@ -769,6 +814,12 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
 
       Navigator.of(context).pop();
       widget.onAddressSaved();
+      if (mounted) {
+        try {
+          Provider.of<CartProvider>(context, listen: false)
+              .fetchCheckoutDetails();
+        } catch (_) {}
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1047,7 +1098,7 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
                                 enabled: false,
                                 readOnly: true,
                                 keyboardType: TextInputType.number,
-                                textInputAction: TextInputAction.done,
+                                textInputAction: TextInputAction.next,
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly,
                                 ],
@@ -1063,6 +1114,42 @@ class _AddressFormBottomSheetState extends State<_AddressFormBottomSheet> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Mobile Number
+                    _buildFieldLabel('Mobile Number'),
+                    TextFormField(
+                      controller: _phoneNumberController,
+                      enabled: !_isSubmitting,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (_) => _submitForm(),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'[0-9+\-\s()]'),
+                        ),
+                        LengthLimitingTextInputFormatter(15),
+                      ],
+                      decoration: _buildInputDecoration(
+                        hintText: 'Enter mobile number (optional)',
+                      ),
+                      style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        color: AppTheme.textDark,
+                      ),
+                      validator: (val) {
+                        if (val != null && val.trim().isNotEmpty) {
+                          final clean = val.replaceAll(
+                            RegExp(r'[\s\-\(\)]'),
+                            '',
+                          );
+                          if (!RegExp(r'^\+?[0-9]{7,15}$').hasMatch(clean)) {
+                            return 'Please enter a valid mobile number';
+                          }
+                        }
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 24),
 

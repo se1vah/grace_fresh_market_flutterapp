@@ -145,7 +145,9 @@ class EnvConfig {
   /// it prepends the configured [serverHost].
   static String formatImageUrl(String rawUrl) {
     final trimmed = rawUrl.trim();
-    if (trimmed.isEmpty) return trimmed;
+    if (trimmed.isEmpty || trimmed == 'null' || trimmed == 'undefined') {
+      return '';
+    }
 
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
       if (trimmed.startsWith('/')) {

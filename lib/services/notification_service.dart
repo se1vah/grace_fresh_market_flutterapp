@@ -47,7 +47,7 @@ class NotificationService {
     }
   }
 
-  static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  static FirebaseMessaging get _messaging => FirebaseMessaging.instance;
 
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
@@ -61,9 +61,14 @@ class NotificationService {
 
   /// Initialize all notification functionality.
   static Future<void> initialize() async {
-    await _requestPermission();
-
     await _initializeLocalNotifications();
+
+    if (Firebase.apps.isEmpty) {
+      debugPrint('Firebase not initialized; skipping FCM notification setup.');
+      return;
+    }
+
+    await _requestPermission();
 
     await _configureForegroundNotifications();
 
@@ -222,6 +227,9 @@ class NotificationService {
   /// Get current FCM token safely. Returns null if token is unavailable or fails.
   static Future<String?> getFcmToken() async {
     try {
+      if (Firebase.apps.isEmpty) {
+        return null;
+      }
       final String? token = await _messaging.getToken().timeout(
         const Duration(seconds: 4),
         onTimeout: () => null,
@@ -259,6 +267,7 @@ class NotificationService {
 
   /// Listen for token changes.
   static void _listenForTokenRefresh() {
+    if (Firebase.apps.isEmpty) return;
     _messaging.onTokenRefresh.listen((String newToken) async {
       debugPrint('FCM token refreshed:');
 
@@ -308,6 +317,7 @@ class NotificationService {
 /// This MUST be a top-level function.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   debugPrint('Background FCM message:');

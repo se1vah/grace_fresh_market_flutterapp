@@ -165,13 +165,24 @@ class SubCategoryItem {
     final double parsedOffer = parseAmount(
       json['offer_percentage'] ??
           json['offerPercentage'] ??
+          json['offer_value'] ??
+          json['offerValue'] ??
+          json['offer_val'] ??
+          json['offerVal'] ??
+          json['offer_rate'] ??
+          json['offerRate'] ??
           json['offer'] ??
           json['discount_percentage'] ??
           json['discountPercentage'] ??
+          json['discount_val'] ??
+          json['discountVal'] ??
           json['discount'] ??
           json['percentage'] ??
           (json['category'] is Map
               ? json['category']['offer_percentage'] ??
+                    json['category']['offerPercentage'] ??
+                    json['category']['offer_value'] ??
+                    json['category']['offerValue'] ??
                     json['category']['offer']
               : null),
     );
@@ -180,7 +191,9 @@ class SubCategoryItem {
         json['originalAmount'] ??
         json['original_price'] ??
         json['originalPrice'] ??
-        json['mrp'];
+        json['mrp'] ??
+        json['regular_price'] ??
+        json['regularPrice'];
     final double? parsedOriginal =
         rawOrig != null && rawOrig.toString().trim().isNotEmpty
             ? parseAmount(rawOrig)

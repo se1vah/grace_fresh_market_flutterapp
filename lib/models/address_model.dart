@@ -6,6 +6,7 @@ class AddressModel {
   final String city;
   final String state;
   final String pincode;
+  final String phoneNumber;
   final String addressType;
   final bool isDefault;
   final String? createdAt;
@@ -19,6 +20,7 @@ class AddressModel {
     required this.city,
     required this.state,
     required this.pincode,
+    this.phoneNumber = '',
     required this.addressType,
     required this.isDefault,
     this.createdAt,
@@ -43,6 +45,7 @@ class AddressModel {
       city: (json['city'] ?? '').toString(),
       state: (json['state'] ?? '').toString(),
       pincode: (json['pincode'] ?? json['pinCode'] ?? json['zip'] ?? '').toString(),
+      phoneNumber: (json['phoneNumber'] ?? json['phone_number'] ?? json['phone'] ?? '').toString(),
       addressType: (json['addressType'] ?? json['address_type'] ?? 'home').toString(),
       isDefault: parseBool(json['isDefault'] ?? json['is_default']),
       createdAt: json['createdAt']?.toString() ?? json['created_at']?.toString(),
@@ -59,6 +62,8 @@ class AddressModel {
       'city': city,
       'state': state,
       'pincode': pincode,
+      'phoneNumber': phoneNumber,
+      'phone_number': phoneNumber,
       'addressType': addressType,
       'isDefault': isDefault,
       'createdAt': createdAt,

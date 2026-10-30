@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -16,14 +17,33 @@ class CategoryPills extends StatelessWidget {
 
     if (lower == 'all') {
       iconData = Icons.grid_view_rounded;
-    } else if (lower.contains('juice') || lower.contains('drink')) {
+    } else if (lower.contains('ice cream') ||
+        lower.contains('icecream') ||
+        lower.contains('dairy day')) {
+      iconData = Icons.icecream_rounded;
+    } else if (lower.contains('milkshake') ||
+        lower.contains('shake') ||
+        lower.contains('lassi') ||
+        lower.contains('falooda')) {
+      iconData = Icons.emoji_food_beverage_rounded;
+    } else if (lower.contains('mojito') || lower.contains('bar')) {
+      iconData = Icons.local_bar_rounded;
+    } else if (lower.contains('salad') || lower.contains('fruit salad')) {
+      iconData = Icons.restaurant_rounded;
+    } else if (lower.contains('juice') ||
+        lower.contains('drink') ||
+        lower.contains('lemon')) {
       iconData = Icons.local_drink_rounded;
     } else if (lower.contains('fruit')) {
       iconData = Icons.apple_rounded;
     } else if (lower.contains('veg')) {
       iconData = Icons.eco_rounded;
+    } else if (lower.contains('grocery') || lower.contains('essential')) {
+      iconData = Icons.shopping_basket_rounded;
     } else if (lower.contains('dairy') || lower.contains('milk')) {
       iconData = Icons.water_drop_rounded;
+    } else if (lower.contains('kerala') || lower.contains('special')) {
+      iconData = Icons.stars_rounded;
     } else if (lower.contains('snack') || lower.contains('bakery')) {
       iconData = Icons.bakery_dining_rounded;
     }
@@ -89,63 +109,74 @@ class CategoryPills extends StatelessWidget {
 
         return SizedBox(
           height: 48,
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            scrollDirection: Axis.horizontal,
-            itemCount: categories.length,
-            separatorBuilder: (context, index) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final cat = categories[index];
-              final dynamic categoryId = cat.id;
-              final bool isSelected =
-                  shopProvider.selectedCategoryId == categoryId;
+          child: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: {
+                PointerDeviceKind.touch,
+                PointerDeviceKind.mouse,
+                PointerDeviceKind.trackpad,
+                PointerDeviceKind.stylus,
+              },
+            ),
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: categories.length,
+              separatorBuilder: (context, index) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final cat = categories[index];
+                final dynamic categoryId = cat.id;
+                final bool isSelected =
+                    shopProvider.selectedCategoryId == categoryId;
 
-              return InkWell(
-                onTap: () {
-                  shopProvider.selectCategory(categoryId);
-                },
-                borderRadius: BorderRadius.circular(24),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppTheme.darkGreen
-                        : const Color(0xFFF2F4F1),
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: isSelected
-                        ? [
-                            BoxShadow(
-                              color: AppTheme.darkGreen.withAlpha(51),
-                              blurRadius: 6,
-                              offset: const Offset(0, 3),
-                            ),
-                          ]
-                        : [],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildCategoryImage(cat, isSelected),
-                      const SizedBox(width: 8),
-                      Text(
-                        cat.categoryName,
-                        style: GoogleFonts.outfit(
-                          color: isSelected ? Colors.white : AppTheme.textDark,
-                          fontWeight: isSelected
-                              ? FontWeight.w600
-                              : FontWeight.w500,
-                          fontSize: 14,
+                return InkWell(
+                  onTap: () {
+                    shopProvider.selectCategory(categoryId);
+                  },
+                  borderRadius: BorderRadius.circular(24),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppTheme.darkGreen
+                          : const Color(0xFFF2F4F1),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: AppTheme.darkGreen.withAlpha(51),
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
+                              ),
+                            ]
+                          : [],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildCategoryImage(cat, isSelected),
+                        const SizedBox(width: 8),
+                        Text(
+                          cat.categoryName,
+                          style: GoogleFonts.outfit(
+                            color: isSelected ? Colors.white : AppTheme.textDark,
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            fontSize: 14,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         );
       },

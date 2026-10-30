@@ -162,6 +162,38 @@ class _ItemCardState extends State<ItemCard> {
                             }),
                           ),
                         ),
+                      if (item.hasOffer)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFF5252), Color(0xFFFF1744)],
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.red.withAlpha(80),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              '${item.effectiveOfferPercentage % 1 == 0 ? item.effectiveOfferPercentage.round() : item.effectiveOfferPercentage.toStringAsFixed(1)}% OFF',
+                              style: GoogleFonts.outfit(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
                       if (item.isOutOfStock)
                         Positioned(
                           top: 8,
@@ -213,23 +245,44 @@ class _ItemCardState extends State<ItemCard> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.lightGreenBadge,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '₹${item.amount.toStringAsFixed(2)}${item.priceUnitSuffix}',
-                      style: GoogleFonts.outfit(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.darkGreen,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.lightGreenBadge,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '₹${item.unitFinalPrice.toStringAsFixed(2)}${item.priceUnitSuffix}',
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.darkGreen,
+                          ),
+                        ),
                       ),
-                    ),
+                      if (item.hasOffer) ...[
+                        const SizedBox(height: 2),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 2),
+                          child: Text(
+                            '₹${item.unitOriginalPrice.toStringAsFixed(2)}',
+                            style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.textSecondary,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   if (!item.isOutOfStock)
                     Consumer<CartProvider>(
